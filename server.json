@@ -1,0 +1,120 @@
+{
+    "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+    "name": "local.experian/ops-mcp-server-consumersync",
+    "description": "Tools for MWAA, EMR Serverless, and Confluence. Includes DAG control, log reading, and diagnosis.",
+    "title": "Ops Tools (MWAA, EMR, Confluence)",
+    "status": "active",
+    "repository": {
+        "url": "https://code.experian.local/projects/ACCOSY/repos/ops-mcp-server-consumersync",
+        "source": "experian-bitbucket"
+    },
+    "version": "1.0.0",
+    "packages": [
+        {
+            "registryType": "source",
+            "source": {
+                "type": "git",
+                "repository": "https://code.experian.local/scm/accosy/ops-mcp-server-consumersync.git"
+            },
+            "environmentVariables": [
+                {
+                    "name": "AWS_REGION",
+                    "description": "AWS region for MWAA and EMR Serverless",
+                    "value": "eu-west-2",
+                    "format": "string"
+                },
+                {
+                    "name": "AWS_PROFILE",
+                    "description": "AWS CLI profile name (run gimme-aws-creds first)",
+                    "value": "consumersync",
+                    "format": "string"
+                },
+                {
+                    "name": "MWAA_ENV_DEV",
+                    "description": "MWAA environment name for dev tier",
+                    "value": "eec-aws-uk-ms-dev-consumersyncenv-mwaa",
+                    "format": "string"
+                },
+                {
+                    "name": "MWAA_ENV_TEST",
+                    "description": "MWAA environment name for test tier",
+                    "value": "eec-aws-uk-ms-tst-consumersyncenv-mwaa",
+                    "format": "string"
+                },
+                {
+                    "name": "MWAA_ENV_PROD",
+                    "description": "MWAA environment name for prod tier",
+                    "value": "eec-aws-uk-ms-prod-consumersyncenv-mwaa",
+                    "format": "string"
+                },
+                {
+                    "name": "EMR_LOG_BUCKET",
+                    "description": "S3 bucket for EMR Serverless Spark driver logs",
+                    "value": "eec-aws-uk-ms-consumersync-dev-logs-bucket",
+                    "format": "string"
+                },
+                {
+                    "name": "EMR_LOG_PREFIX",
+                    "description": "S3 prefix for Spark logs",
+                    "value": "spark-logs",
+                    "format": "string"
+                },
+                {
+                    "name": "CONFLUENCE_BASE_URL",
+                    "description": "Confluence server base URL",
+                    "value": "https://pages.experian.local",
+                    "format": "string"
+                },
+                {
+                    "name": "CONFLUENCE_PAT",
+                    "description": "Confluence Personal Access Token (Profile → Personal Access Tokens → Create)",
+                    "isRequired": true,
+                    "format": "string",
+                    "isSecret": true
+                },
+                {
+                    "name": "CONFLUENCE_SPACE_KEY",
+                    "description": "Default Confluence space key to search in",
+                    "value": "ACTIVATE",
+                    "format": "string"
+                }
+            ]
+        }
+    ],
+    "_meta": {
+        "io.modelcontextprotocol.registry/publisher-provided": {
+            "tool": "experian-publisher",
+            "version": "1.0.0",
+            "build_info": {
+                "timestamp": "2026-02-16T00:00:00Z"
+            }
+        },
+        "com.experian": {
+            "labels": [
+                "mwaa",
+                "airflow",
+                "emr",
+                "spark",
+                "confluence",
+                "ops"
+            ],
+            "owner": {
+                "userId": "C13505E",
+                "name": "Reddy, KalluSrujan",
+                "email": "KalluSrujan.Reddy@experian.com"
+            },
+            "collaborators": [],
+            "tags": {
+                "appId": "",
+                "arbId": "",
+                "psaId": "",
+                "businessUnit": "EMS",
+                "region": "UK",
+                "team": "ConsumerSync"
+            },
+            "documentationLinks": [
+                "https://code.experian.local/projects/ACCOSY/repos/ops-mcp-server-consumersync/browse/README.md"
+            ]
+        }
+    }
+}
