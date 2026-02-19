@@ -5,7 +5,7 @@ Provides a health-check tool so the AI can verify connectivity
 to all configured services before attempting operations.
 
 Tools:
-  • server_health_check — test connectivity to MWAA, EMR, S3, Confluence
+  • server_health_check — test connectivity to MWAA, EMR, S3, Confluence, Azure DevOps
 """
 
 from __future__ import annotations
@@ -24,6 +24,9 @@ from mcp_server.config import (
     CONFLUENCE_BASE_URL,
     CONFLUENCE_PAT,
     CONFLUENCE_SPACE_KEY,
+    AZDO_BASE_URL,
+    AZDO_PAT,
+    AZDO_PROJECT,
 )
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -34,7 +37,7 @@ def server_health_check() -> str:
     Check connectivity to all configured services.
 
     Tests AWS credentials, MWAA environments, EMR Serverless API,
-    S3 log bucket access, and Confluence PAT.
+    S3 log bucket access, Confluence PAT, and Azure DevOps connectivity.
 
     Use this FIRST to verify everything is connected before running
     other tools. Requires VPN and valid AWS credentials.
@@ -133,6 +136,39 @@ def server_health_check() -> str:
                 lines.append(f"⚠️  **Confluence** — HTTP {resp.status_code}")
         except Exception as exc:
             lines.append(f"❌ **Confluence** — {exc}")
+    lines.append("")
+
+    # ── Azure DevOps (TFS) ──
+    if not AZDO_PAT:
+        lines.append("❌ **Azure DevOps** — PAT not configured")
+    elif not AZDO_BASE_URL:
+        lines.append("❌ **Azure DevOps** — AZDO_BASE_URL not set")
+    else:
+        try:
+            import base64
+            token = base64.b64encode(f":{AZDO_PAT}".encode()).decode()
+            sess = requests.Session()
+            sess.headers.update({
+                "Authorization": f"Basic {token}",
+                "Accept": "application/json",
+            })
+            sess.verify = False
+            resp = sess.get(
+                f"{AZDO_BASE_URL.rstrip('/')}/_apis/projects/{AZDO_PROJECT}",
+                params={"api-version": "7.1"},
+                timeout=15,
+            )
+            if resp.status_code == 200:
+                proj_data = resp.json()
+                proj_name = proj_data.get("name", AZDO_PROJECT)
+                proj_state = proj_data.get("state", "?")
+                lines.append(f"✅ **Azure DevOps** — connected to `{proj_name}` ({proj_state})")
+                lines.append(f"   URL     : {AZDO_BASE_URL}")
+                lines.append(f"   Project : {AZDO_PROJECT}")
+            else:
+                lines.append(f"⚠️  **Azure DevOps** — HTTP {resp.status_code}")
+        except Exception as exc:
+            lines.append(f"❌ **Azure DevOps** — {exc}")
     lines.append("")
 
     # ── Summary ──

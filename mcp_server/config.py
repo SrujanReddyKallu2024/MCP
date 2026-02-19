@@ -56,6 +56,13 @@ CONFLUENCE_PAT: str = os.getenv("CONFLUENCE_PAT", "")
 CONFLUENCE_SPACE_KEY: str = os.getenv("CONFLUENCE_SPACE_KEY", "ACTIVATE")
 CONFLUENCE_ROOT_PAGE_ID: str = os.getenv("CONFLUENCE_ROOT_PAGE_ID", "")  # Scope to page tree
 
+# ── Azure DevOps (TFS) ─────────────────────────────────────────────────────
+
+AZDO_BASE_URL: str = os.getenv("AZDO_BASE_URL", "https://ukfhpapcvt02.uk.experian.local/tfs/DefaultCollection")
+AZDO_PAT: str = os.getenv("AZDO_PAT", "")
+AZDO_PROJECT: str = os.getenv("AZDO_PROJECT", "Activate")
+AZDO_TEAM: str = os.getenv("AZDO_TEAM", "Activate Team")
+
 
 # ── Validators ───────────────────────────────────────────────────────────────
 
@@ -85,4 +92,15 @@ def validate_confluence() -> str:
     """Return error message or empty string if confluence is configured."""
     if not CONFLUENCE_PAT:
         return "⚠️  CONFLUENCE_PAT is not set in .env — please set it before using Confluence tools."
+    return ""
+
+
+def validate_azuredevops() -> str:
+    """Return error message or empty string if Azure DevOps is configured."""
+    if not AZDO_BASE_URL:
+        return "⚠️  AZDO_BASE_URL not set — e.g. https://server/tfs/DefaultCollection"
+    if not AZDO_PAT:
+        return "⚠️  AZDO_PAT not set — generate a PAT in Azure DevOps → User Settings → Personal Access Tokens"
+    if not AZDO_PROJECT:
+        return "⚠️  AZDO_PROJECT not set — set to your project name"
     return ""

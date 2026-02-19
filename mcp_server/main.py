@@ -1,13 +1,14 @@
 """
-MCP Server — Ops Tools for MWAA, EMR Serverless & Confluence.
+MCP Server — Ops Tools for MWAA, EMR Serverless, Confluence & Azure DevOps.
 
-Single server exposing tools across four domains:
+Single server exposing tools across five domains:
   • Airflow (via MWAA)   — DAG listing, run details, task logs, triggering,
                            pause/unpause, task retry, historical runs, DAG source
   • EMR Serverless       — app listing, job runs, Spark driver S3 logs, S3 browsing,
                            job cancellation, general S3 file reading, cost summary
   • Confluence           — search, page content, child pages, attachments, labels,
                            comments, page creation, page updates
+  • Azure DevOps (TFS)   — Git repos, file browsing, sprints, work items, backlog
   • Orchestration        — one-shot DAG failure diagnosis
   • Utilities            — server health check
 
@@ -24,7 +25,7 @@ mcp = FastMCP(
     "ops-tools",
     instructions=(
         "This server provides operations tools for AWS MWAA (Airflow), "
-        "EMR Serverless, Confluence, and utility functions."
+        "EMR Serverless, Confluence, Azure DevOps (TFS), and utility functions."
         "\n\n"
         "DOCUMENTATION: When the user says 'documentation', 'docs', 'runbook', "
         "or 'wiki', ALWAYS use Confluence tools. search_confluence to find, "
@@ -62,6 +63,12 @@ mcp = FastMCP(
         "S3 FILES: Use read_s3_file(s3_uri='s3://bucket/key') to read any S3 file."
         "\n\n"
         "All MWAA tools accept 'env': 'dev', 'test', or 'prod' (default: dev)."
+        "\n\n"
+        "AZURE DEVOPS: When the user asks about repos, source code, sprints, "
+        "work items, PBIs, tasks, bugs, backlogs, or iterations — use Azure DevOps tools. "
+        "list_repos to see repos, browse_repo to explore, read_repo_file to read code. "
+        "get_current_sprint for active sprint, get_sprint_work_items for sprint content, "
+        "get_work_item_details for full PBI/Task/Bug details, get_backlog for backlog."
     ),
 )
 
@@ -102,6 +109,15 @@ from mcp_server.tools.confluence_tools import (       # noqa: E402
     get_page_comments,
     create_confluence_page,
     update_confluence_page,
+)
+from mcp_server.tools.azdo_tools import (              # noqa: E402
+    list_repos,
+    browse_repo,
+    read_repo_file,
+    get_current_sprint,
+    get_sprint_work_items,
+    get_work_item_details,
+    get_backlog,
 )
 from mcp_server.tools.orchestration_tools import (    # noqa: E402
     diagnose_dag_failure,
@@ -145,6 +161,16 @@ mcp.tool()(get_page_labels)
 mcp.tool()(get_page_comments)
 mcp.tool()(create_confluence_page)
 mcp.tool()(update_confluence_page)
+
+# ── Register Azure DevOps tools (7) ─────────────────────────────────────────
+
+mcp.tool()(list_repos)
+mcp.tool()(browse_repo)
+mcp.tool()(read_repo_file)
+mcp.tool()(get_current_sprint)
+mcp.tool()(get_sprint_work_items)
+mcp.tool()(get_work_item_details)
+mcp.tool()(get_backlog)
 
 # ── Register Orchestration tools (1) ────────────────────────────────────────
 
