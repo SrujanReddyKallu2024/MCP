@@ -22,5 +22,3 @@ venv/
 # Lock files (let users generate their own)
 uv.lock
 
-# Resolved prompt docs (local only)
-*.resolved

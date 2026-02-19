@@ -11,7 +11,7 @@ dependencies = [
 ]
 
 [project.scripts]
-ops-mcp = "mcp_server.main:main"
+ops-mcp-server = "mcp_server.main:main"
 
 [build-system]
 requires = ["setuptools>=68.0"]

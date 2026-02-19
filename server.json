@@ -3,7 +3,6 @@
     "name": "local.experian/ops-mcp-server-consumersync",
     "description": "Tools for MWAA, EMR Serverless, and Confluence. Includes DAG control, log reading, and diagnosis.",
     "title": "Ops Tools (MWAA, EMR, Confluence)",
-    "status": "active",
     "repository": {
         "url": "https://code.experian.local/projects/ACCOSY/repos/ops-mcp-server-consumersync",
         "source": "experian-bitbucket"
@@ -11,72 +10,65 @@
     "version": "1.0.0",
     "packages": [
         {
-            "registryType": "source",
-            "source": {
-                "type": "git",
-                "repository": "https://code.experian.local/scm/accosy/ops-mcp-server-consumersync.git"
+            "registryType": "pypi",
+            "registryBaseUrl": "https://artifacts.experian.local/artifactory/api/pypi/pypi",
+            "identifier": "ops-mcp-server",
+            "version": "1.0.0",
+            "transport": {
+                "type": "stdio"
             },
             "environmentVariables": [
                 {
                     "name": "AWS_REGION",
                     "description": "AWS region for MWAA and EMR Serverless",
-                    "value": "eu-west-2",
-                    "format": "string"
+                    "value": "eu-west-2"
                 },
                 {
                     "name": "AWS_PROFILE",
                     "description": "AWS CLI profile name (run gimme-aws-creds first)",
-                    "value": "consumersync",
-                    "format": "string"
+                    "value": "consumersync"
                 },
                 {
                     "name": "MWAA_ENV_DEV",
                     "description": "MWAA environment name for dev tier",
-                    "value": "eec-aws-uk-ms-dev-consumersyncenv-mwaa",
-                    "format": "string"
+                    "value": "eec-aws-uk-ms-dev-consumersyncenv-mwaa"
                 },
                 {
                     "name": "MWAA_ENV_TEST",
                     "description": "MWAA environment name for test tier",
-                    "value": "eec-aws-uk-ms-tst-consumersyncenv-mwaa",
-                    "format": "string"
+                    "value": "eec-aws-uk-ms-tst-consumersyncenv-mwaa"
                 },
                 {
                     "name": "MWAA_ENV_PROD",
                     "description": "MWAA environment name for prod tier",
-                    "value": "eec-aws-uk-ms-prod-consumersyncenv-mwaa",
-                    "format": "string"
+                    "value": "eec-aws-uk-ms-prod-consumersyncenv-mwaa"
                 },
                 {
                     "name": "EMR_LOG_BUCKET",
                     "description": "S3 bucket for EMR Serverless Spark driver logs",
-                    "value": "eec-aws-uk-ms-consumersync-dev-logs-bucket",
-                    "format": "string"
+                    "value": "eec-aws-uk-ms-consumersync-dev-logs-bucket"
                 },
                 {
                     "name": "EMR_LOG_PREFIX",
                     "description": "S3 prefix for Spark logs",
-                    "value": "spark-logs",
-                    "format": "string"
+                    "value": "spark-logs"
                 },
                 {
                     "name": "CONFLUENCE_BASE_URL",
                     "description": "Confluence server base URL",
-                    "value": "https://pages.experian.local",
-                    "format": "string"
+                    "value": "https://pages.experian.local"
                 },
                 {
                     "name": "CONFLUENCE_PAT",
-                    "description": "Confluence Personal Access Token (Profile → Personal Access Tokens → Create)",
-                    "isRequired": true,
-                    "format": "string",
-                    "isSecret": true
+                    "description": "Confluence Personal Access Token",
+                    "value": "${input:confluence_pat}",
+                    "isSecret": true,
+                    "isRequired": true
                 },
                 {
                     "name": "CONFLUENCE_SPACE_KEY",
                     "description": "Default Confluence space key to search in",
-                    "value": "ACTIVATE",
-                    "format": "string"
+                    "value": "ACTIVATE"
                 }
             ]
         }
