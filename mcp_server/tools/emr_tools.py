@@ -19,7 +19,7 @@ Tools:
 from __future__ import annotations
 
 import gzip
-import io
+
 import json
 from datetime import datetime, timezone
 from typing import Any
@@ -321,36 +321,72 @@ def get_job_run_details(application_id: str, job_run_id: str) -> str:
 def read_spark_driver_log(
     application_id: str,
     job_run_id: str,
-    log_type: str = "stderr",
+    log_type: str = "stdout",
     s3_log_uri: str | None = None,
     process_name: str | None = None,
     tail_lines: int = 300,
     search_text: str | None = None,
     bucket: str | None = None,
+    read_both: bool = False,
 ) -> str:
     """
-    Read the Spark driver log (stderr or stdout) from S3 for an EMR Serverless job run.
+    Read the Spark driver log from S3 for an EMR Serverless job run.
 
-    Use log_type='stdout' for Python application output (print statements, logging messages,
-    data processing details, row counts, file paths). This is usually what you want for debugging.
-    Use log_type='stderr' for Spark framework logs (executor allocation, memory, shuffle).
+    DEFAULT: Reads stdout.gz — this is the PRIMARY log containing Python print
+    statements, row counts, file paths, and application errors. This is what
+    you want 90% of the time.
 
-    The application_id and job_run_id are found in Airflow task logs:
-    - application_id: from 'initialise' task → look for 'EMR serverless application created: 00gXXX'
-    - job_run_id: from the processing task → look for 'EMR serverless job started: 00gXXX'
+    Use log_type='stderr' only when you need Spark framework logs (executor
+    allocation, memory warnings, shuffle errors).
+
+    Use read_both=True to get BOTH logs in one call (stdout first, then
+    stderr filtered to ERROR lines only).
+
+    How to find application_id and job_run_id:
+      - application_id: from the 'initialise' Airflow task log → 'EMR serverless application created: 00gXXX'
+      - job_run_id: from the processing Airflow task log → 'EMR serverless job started: 00gXXX'
+      - Or use list_emr_applications() then list_job_runs()
 
     Args:
         application_id: The EMR Serverless application ID (e.g. '00g16i3marao0c0t').
         job_run_id: The job run ID (e.g. '00g16i5g2pm56o0v').
-        log_type: 'stderr' or 'stdout' (default 'stderr'). Use 'stdout' for Python app output.
-        s3_log_uri: Optional full S3 URI to the log file. If provided, reads directly.
-        process_name: Optional process/folder name under spark-logs/ (e.g. 'ttdgeo_metadata_SE').
-        tail_lines: Number of lines from the end (default 300). Set to -1 for all.
-        search_text: Optional text to filter for in the log.
+        log_type: 'stdout' (default, Python app output) or 'stderr' (Spark framework logs).
+        s3_log_uri: Optional full S3 URI to read directly (e.g. 's3://bucket/path/stdout.gz').
+        process_name: Optional folder name under spark-logs/ (e.g. 'stackadapt_main'). Speeds up log discovery.
+        tail_lines: Number of lines from the end (default 300). Use -1 for all lines.
+        search_text: Optional text to filter log lines (e.g. 'ERROR', 'Exception').
         bucket: S3 bucket override (default from config).
+        read_both: If True, read BOTH stdout and stderr in one call. stdout shown first, stderr filtered to ERROR lines.
 
     Returns the log content, optionally filtered and tailed.
     """
+    # If read_both, get stdout first then stderr (errors only)
+    if read_both:
+        stdout_result = read_spark_driver_log(
+            application_id=application_id,
+            job_run_id=job_run_id,
+            log_type="stdout",
+            process_name=process_name,
+            tail_lines=tail_lines,
+            search_text=search_text,
+            bucket=bucket,
+        )
+        stderr_result = read_spark_driver_log(
+            application_id=application_id,
+            job_run_id=job_run_id,
+            log_type="stderr",
+            process_name=process_name,
+            tail_lines=min(tail_lines, 100),
+            search_text="ERROR",
+            bucket=bucket,
+        )
+        return (
+            "═══ STDOUT (Python App Output — primary log) ═══\n"
+            + stdout_result
+            + "\n\n═══ STDERR (Spark Framework — errors only) ═══\n"
+            + stderr_result
+        )
+
     s3 = _get_s3()
     log_bucket = bucket or EMR_LOG_BUCKET
     prefix = EMR_LOG_PREFIX.strip("/")
@@ -487,7 +523,7 @@ def _find_log_suggestions(
 def browse_s3_logs(
     prefix: str | None = None,
     bucket: str | None = None,
-    max_items: int = 50,
+    max_items: int = 100,
 ) -> str:
     """
     Browse the S3 log directory structure. Navigate into folders to find logs.
@@ -550,6 +586,9 @@ def browse_s3_logs(
                 # For log files, hint at how to read them
                 if "SPARK_DRIVER" in f["Key"] or "sparkdriver" in f["Key"].lower():
                     lines.append(f"     → `read_spark_driver_log(s3_log_uri='s3://{log_bucket}/{f['Key']}')`")
+
+    if resp.get("IsTruncated"):
+        lines.append(f"\n⚠️ More items exist — showing first {max_items}. Use a more specific prefix to see deeper.")
 
     return "\n".join(lines)
 

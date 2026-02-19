@@ -16,7 +16,7 @@ Tools:
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 import boto3
@@ -213,10 +213,6 @@ def _fmt_duration(start: str | None, end: str | None) -> str:
         return f"{secs}s"
     except Exception:
         return "—"
-
-
-def _today_str() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT00:00:00+00:00")
 
 
 def _env_header(env: str | None) -> str:
@@ -730,5 +726,118 @@ def get_dag_source(dag_id: str, env: str | None = None) -> str:
             downstream = t.get("downstream_task_ids", [])
             dep_str = f" → {', '.join(downstream)}" if downstream else ""
             lines.append(f"   • {tid} ({op}){dep_str}")
+
+    return "\n".join(lines)
+
+
+def get_dag_status_report(
+    env: str | None = None,
+    limit: int = 100,
+) -> str:
+    """
+    Get a complete status dashboard of ALL DAGs — the go-to tool for any overview question.
+
+    USE THIS TOOL when the user asks:
+      - "What's the status of all DAGs?"
+      - "Which DAGs failed today?"
+      - "Show me a DAG report / dashboard / overview"
+      - "What's running right now?"
+      - "Are all DAGs healthy?"
+
+    Shows every DAG with:
+      - Active/Paused state
+      - Schedule interval
+      - Last run: state (success/failed/running), date, and duration
+      - Summary counts at the top
+      - Failed DAGs highlighted at the bottom with diagnosis commands
+
+    Args:
+        env: Which environment — 'dev', 'test', or 'prod' (default: dev).
+        limit: Maximum number of DAGs to return (default 100).
+
+    Returns a formatted status report with every DAG and its current health.
+    """
+    # Step 1: Get all DAGs (active + paused)
+    params = {"limit": str(limit), "only_active": "false"}
+    data = _airflow_api("GET", "/api/v1/dags", env=env, query_params=params)
+    if "error" in data:
+        return data["error"]
+
+    dags = data.get("dags", [])
+    if not dags:
+        return _env_header(env) + "No DAGs found."
+
+    # Step 2: Batch-query recent runs for ALL DAGs (last 7 days)
+    now = datetime.now(timezone.utc)
+    week_ago = now - timedelta(days=7)
+
+    runs_body = {
+        "execution_date_gte": week_ago.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+        "execution_date_lte": now.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+        "page_limit": 500,
+        "order_by": "-execution_date",
+    }
+    runs_data = _airflow_api("POST", "/api/v1/dags/~/dagRuns/list", env=env, body=runs_body)
+
+    # Build map: dag_id → most recent run
+    last_run_map: dict[str, dict] = {}
+    if "error" not in runs_data:
+        for run in runs_data.get("dag_runs", []):
+            did = run.get("dag_id", "")
+            if did not in last_run_map:
+                last_run_map[did] = run
+
+    # Step 3: Format output
+    lines = [_env_header(env), f"📊 **DAG Status Report — {len(dags)} DAGs**\n"]
+
+    # Summary counts
+    active_count = sum(1 for d in dags if not d.get("is_paused"))
+    paused_count = sum(1 for d in dags if d.get("is_paused"))
+    failed_dags = [d["dag_id"] for d in dags if last_run_map.get(d["dag_id"], {}).get("state") == "failed"]
+    running_dags = [d["dag_id"] for d in dags if last_run_map.get(d["dag_id"], {}).get("state") == "running"]
+
+    lines.append(f"   ▶ Active: {active_count}  |  ⏸ Paused: {paused_count}  |  ❌ Failed: {len(failed_dags)}  |  ⏳ Running: {len(running_dags)}")
+    lines.append("")
+
+    # Table
+    lines.append(f"{'DAG ID':<50} {'Status':<10} {'Last Run':<12} {'Last State':<15} {'Duration':<10} {'Schedule'}")
+    lines.append("─" * 130)
+
+    for d in sorted(dags, key=lambda x: x.get("dag_id", "")):
+        dag_id = d.get("dag_id", "?")
+        paused = "⏸ Paused" if d.get("is_paused") else "▶ Active"
+
+        sched = d.get("schedule_interval", {})
+        if isinstance(sched, dict):
+            sched_str = sched.get("value", "None")
+        else:
+            sched_str = str(sched) if sched else "None"
+
+        last_run = last_run_map.get(dag_id)
+        if last_run:
+            state = last_run.get("state", "?")
+            state_display = f"{_emoji(state)} {state}"
+            run_date = (last_run.get("execution_date") or "")[:10]
+            dur = _fmt_duration(last_run.get("start_date"), last_run.get("end_date"))
+        else:
+            state_display = "⚪ no runs"
+            run_date = "—"
+            dur = "—"
+
+        lines.append(f"{dag_id:<50} {paused:<10} {run_date:<12} {state_display:<15} {dur:<10} {sched_str}")
+
+    # Highlight failed DAGs at the bottom
+    if failed_dags:
+        lines.append("")
+        lines.append(f"❌ **{len(failed_dags)} DAG(s) with FAILED last run:**")
+        for fd in failed_dags:
+            lines.append(f"   • {fd}")
+            lines.append(f"     💡 Use: diagnose_dag_failure(dag_id='{fd}', env='{env or 'dev'}')")
+
+    if running_dags:
+        lines.append("")
+        lines.append(f"⏳ **{len(running_dags)} DAG(s) currently RUNNING:**")
+        for rd in running_dags:
+            lines.append(f"   • {rd}")
 
     return "\n".join(lines)

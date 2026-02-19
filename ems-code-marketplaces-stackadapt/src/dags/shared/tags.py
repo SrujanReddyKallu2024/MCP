@@ -1,3 +1,0 @@
-tags = {
-    "blah":"blah"
-}

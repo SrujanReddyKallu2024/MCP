@@ -200,6 +200,22 @@ def diagnose_dag_failure(
                 lines.append("")
                 break
 
+    # ── Step 4b: Extract process_name from task logs for faster S3 log discovery ──
+    process_name = None
+    all_log_text = "\n".join(lines)
+    pname_patterns = [
+        r"spark-logs/([A-Za-z0-9_-]+)/applications/",
+        r"logUri['\"]?\s*[:=]\s*['\"]?s3://[^/]+/spark-logs/([^/\"'\s]+)",
+    ]
+    for pat in pname_patterns:
+        m = re.search(pat, all_log_text)
+        if m:
+            # Use first non-None group (pattern 1 has group 1, pattern 2 has group 1 or 2)
+            candidate = m.group(1) if m.group(1) else (m.group(2) if m.lastindex >= 2 else None)
+            if candidate and candidate != "applications":
+                process_name = candidate
+                break
+
     # ── Step 5: Read Spark driver logs ──
     if emr_app_id:
         # If we don't have a job ID yet, try listing jobs
@@ -212,6 +228,8 @@ def diagnose_dag_failure(
 
         if emr_job_id:
             lines.append(f"🔗 **EMR Job Run ID:** `{emr_job_id}`")
+            if process_name:
+                lines.append(f"🔗 **Process Name:** `{process_name}`")
             lines.append("")
 
             # Read stdout (Python app output)
@@ -221,6 +239,7 @@ def diagnose_dag_failure(
                 job_run_id=emr_job_id,
                 log_type="stdout",
                 tail_lines=100,
+                process_name=process_name,
             )
             lines.append(stdout_log)
             lines.append("")
@@ -233,6 +252,7 @@ def diagnose_dag_failure(
                 log_type="stderr",
                 tail_lines=50,
                 search_text="ERROR",
+                process_name=process_name,
             )
             lines.append(stderr_log)
             lines.append("")

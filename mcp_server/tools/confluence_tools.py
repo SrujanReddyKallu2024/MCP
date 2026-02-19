@@ -6,11 +6,15 @@ with a Personal Access Token (Bearer auth).  Handles HTML→text conversion
 so the AI gets clean readable content.
 
 Tools:
-  • search_confluence — CQL-based search across a space
-  • get_page_content  — read a page's full content as clean text
-  • get_child_pages   — list children of a parent page
-  • get_space_pages   — list all pages in a space (paginated)
-  • get_page_by_title — find a page by exact title
+  • search_confluence    — full-text search across a space (default 50 results, paginated)
+  • get_page_content     — read a page's full content as clean text
+  • get_child_pages      — list children of a parent page
+  • get_space_pages      — list all pages in a space (paginated)
+  • get_page_attachments — list file attachments on a page
+  • get_page_labels      — get page tags/labels
+  • get_page_comments    — read page comments
+  • create_confluence_page — create a new page
+  • update_confluence_page — update an existing page
 """
 
 from __future__ import annotations
@@ -236,22 +240,27 @@ def search_confluence(
     query: str,
     space_key: str | None = None,
     ancestor_page_id: str | None = None,
-    max_results: int = 15,
+    max_results: int = 50,
+    start: int = 0,
 ) -> str:
     """
-    Search Confluence pages using full-text search (same as the web UI).
+    Search Confluence pages — the primary tool for finding documentation.
+
+    USE THIS TOOL when the user says 'docs', 'documentation', 'wiki', 'runbook',
+    'find page about X', or any documentation-related question.
+
+    Searches both page titles and content, ranked by relevance (same as the web UI).
 
     Args:
-        query: The search text. Will be searched in title and content.
+        query: The search text (e.g. 'Audience Engine'). Also supports raw CQL
+               queries (e.g. "type=page AND title~'Walkthrough'").
         space_key: Space to search in (default: ACTIVATE from config).
-        ancestor_page_id: Optional parent page ID to scope search to a page tree.
-        max_results: Max results to return (default 15).
+        ancestor_page_id: Optional parent page ID to scope search within a page tree.
+        max_results: Max results to return (default 50).
+        start: Pagination offset — skip this many results (default 0). Use for page 2, 3, etc.
 
     Returns a list of matching pages with titles, space, last modified, and URLs.
-
-    Example queries:
-      - "Audience Engine" — full-text search in title and body
-      - "type=page AND title~'Walkthrough'" — raw CQL
+    Use get_page_content(page_id='...') to read any result.
     """
     space = space_key or CONFLUENCE_SPACE_KEY
     root_page = ancestor_page_id or CONFLUENCE_ROOT_PAGE_ID
@@ -282,6 +291,7 @@ def search_confluence(
         params = {
             "cql": cql,
             "limit": str(max_results),
+            "start": str(start),
             "expand": "content.version,content.space,content.ancestors",
         }
         data = _api_get("/rest/api/search", params=params)
@@ -292,6 +302,7 @@ def search_confluence(
         params = {
             "cql": search_cql,
             "limit": str(max_results),
+            "start": str(start),
             "expand": "content.version,content.space,content.ancestors",
         }
         data = _api_get("/rest/api/search", params=params)
@@ -328,6 +339,14 @@ def search_confluence(
         lines.append(f"   Modified : {modified_when} by {modified_by}")
         lines.append(f"   URL      : {page_url}")
         lines.append("")
+
+    # Pagination info
+    total = data.get("totalSize", len(results)) if isinstance(data, dict) else len(results)
+    if start + len(results) < total:
+        lines.append(f"\n📄 Showing {start + 1}–{start + len(results)} of {total} total results.")
+        lines.append(f"   💡 Use `start={start + len(results)}` to see more.")
+    elif total > len(results):
+        lines.append(f"\n📄 Showing {len(results)} results (total: {total}).")
 
     return "\n".join(lines)
 
@@ -538,37 +557,6 @@ def get_space_pages(
         lines.append(f"\n💡 More pages available. Use `start={start + len(results)}` to see the next batch.")
 
     return "\n".join(lines)
-
-
-def get_page_by_title(title: str, space_key: str | None = None) -> str:
-    """
-    Find a Confluence page by its exact title.
-
-    Args:
-        title: The exact page title.
-        space_key: Space key (default: ACTIVATE from config).
-
-    Returns page details including ID, URL, and optionally content.
-    """
-    space = space_key or CONFLUENCE_SPACE_KEY
-
-    data = _api_get("/rest/api/content", params={
-        "spaceKey": space,
-        "title": title,
-        "type": "page",
-        "expand": "version,space,ancestors,body.view",
-        "limit": "5",
-    })
-    if isinstance(data, dict) and "error" in data:
-        return data["error"]
-
-    results = data.get("results", []) if isinstance(data, dict) else []
-    if not results:
-        return f"No page found with title '{title}' in space {space}."
-
-    # Return the first match with full content
-    page = results[0]
-    return get_page_content(page_id=page["id"], space_key=space)
 
 
 def get_page_attachments(
