@@ -6,11 +6,16 @@ directly via the MWAA web server endpoint.  This works for both public and
 **private** MWAA environments (when VPN provides network access to the endpoint).
 
 Tools:
-  • list_dags          — list all DAGs with schedule & pause status
-  • get_dag_runs_today — every DAG run triggered today with pass/fail
-  • get_dag_run_details — full task-level breakdown for one DAG run
-  • get_task_log       — read the Airflow log of a single task attempt
-  • trigger_dag        — manually trigger a DAG run
+  • list_dags            — list all DAGs with schedule & pause status
+  • get_dag_runs         — DAG runs for today/yesterday/date with pass/fail
+  • get_dag_run_details  — full task-level breakdown for one DAG run
+  • get_task_log         — read the Airflow log of a single task attempt
+  • trigger_dag          — manually trigger a DAG run
+  • pause_dag            — pause a DAG to prevent scheduled runs
+  • unpause_dag          — unpause a DAG to resume scheduling
+  • clear_task_instance  — retry a failed task without re-triggering the DAG
+  • get_dag_source       — get DAG source code, tasks, and metadata
+  • get_dag_status_report — full dashboard of ALL DAGs with last run status
 """
 
 from __future__ import annotations

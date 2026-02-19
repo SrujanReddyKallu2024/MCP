@@ -12,8 +12,11 @@ Tools:
   • list_emr_applications  — list all EMR Serverless apps
   • list_job_runs          — job runs for an app, with optional state filter
   • get_job_run_details    — deep details for one job run
-  • read_spark_driver_log  — read stderr/stdout from S3 sparkdriver path
+  • read_spark_driver_log  — read stdout/stderr from S3 SPARK_DRIVER path
   • browse_s3_logs         — navigate the S3 log directory structure
+  • cancel_job_run         — cancel a running or pending job
+  • read_s3_file           — read any file from S3 by URI
+  • get_emr_cost_summary   — resource usage and cost summary across jobs
 """
 
 from __future__ import annotations

@@ -104,6 +104,7 @@ from mcp_server.tools.confluence_tools import (       # noqa: E402
     search_confluence,
     get_page_content,
     get_child_pages,
+    get_space_pages,
     get_page_attachments,
     get_page_labels,
     get_page_comments,
@@ -151,11 +152,12 @@ mcp.tool()(cancel_job_run)
 mcp.tool()(read_s3_file)
 mcp.tool()(get_emr_cost_summary)
 
-# ── Register Confluence tools (8) ────────────────────────────────────────────
+# ── Register Confluence tools (9) ────────────────────────────────────────────
 
 mcp.tool()(search_confluence)
 mcp.tool()(get_page_content)
 mcp.tool()(get_child_pages)
+mcp.tool()(get_space_pages)
 mcp.tool()(get_page_attachments)
 mcp.tool()(get_page_labels)
 mcp.tool()(get_page_comments)
