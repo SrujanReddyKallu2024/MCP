@@ -1,4 +1,0 @@
-pandas
-pyarrow
-numpy==1.26.3
-blowfish

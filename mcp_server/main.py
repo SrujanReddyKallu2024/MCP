@@ -37,10 +37,15 @@ mcp = FastMCP(
         "Example: 'I found 10 runs for HEM processing. Which one? 1. ✅ Feb 19 SUCCESS, "
         "2. ❌ Feb 18 FAILED, ...' — let them pick by number."
         "\n\n"
-        "LOG PRIORITY: When reading Spark logs, ALWAYS read stdout FIRST "
-        "(Python app output from stdout.gz), then stderr (Spark framework). "
-        "The stdout.gz log is the most important — it has print statements, row counts, "
-        "file paths, and actual application errors."
+        "LOG PRIORITY: read_spark_driver_log defaults to stdout (the primary log "
+        "with Python print statements, row counts, file paths, and errors). "
+        "Use read_both=True to get stdout + stderr in one call. "
+        "Only use log_type='stderr' when specifically investigating Spark framework issues."
+        "\n\n"
+        "DAG STATUS: When the user asks for a status report, dashboard, overview, "
+        "'which DAGs failed', or 'what's running' — use get_dag_status_report(). "
+        "It shows EVERY DAG with last run state, pause status, and schedule in one view. "
+        "Use list_dags() only when the user specifically wants just DAG names/schedules."
         "\n\n"
         "DEBUGGING WORKFLOW: For quick diagnosis, use diagnose_dag_failure(dag_id='...') "
         "which does everything automatically. For manual step-by-step: "
@@ -76,6 +81,7 @@ from mcp_server.tools.mwaa_tools import (             # noqa: E402
     unpause_dag,
     clear_task_instance,
     get_dag_source,
+    get_dag_status_report,
 )
 from mcp_server.tools.emr_tools import (              # noqa: E402
     list_emr_applications,
@@ -105,7 +111,7 @@ from mcp_server.tools.orchestration_tools import (    # noqa: E402
 
 mcp.tool()(server_health_check)
 
-# ── Register MWAA tools (9) ─────────────────────────────────────────────────
+# ── Register MWAA tools (10) ────────────────────────────────────────────────
 
 mcp.tool()(list_dags)
 mcp.tool()(get_dag_runs)
@@ -116,6 +122,7 @@ mcp.tool()(pause_dag)
 mcp.tool()(unpause_dag)
 mcp.tool()(clear_task_instance)
 mcp.tool()(get_dag_source)
+mcp.tool()(get_dag_status_report)
 
 # ── Register EMR Serverless tools (8) ────────────────────────────────────────
 
