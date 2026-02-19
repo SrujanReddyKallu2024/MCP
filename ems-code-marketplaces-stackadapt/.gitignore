@@ -1,0 +1,6 @@
+**/doc.md
+*.pyc
+__pycache__/
+.idea
+.vscode
+.venv/
