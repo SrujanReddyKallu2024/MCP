@@ -1,0 +1,26 @@
+# Secrets — NEVER push .env (contains PAT tokens, AWS profiles)
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+.mypy_cache/
+
+# Virtual environments
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/
+.gemini/
+
+# Lock files (let users generate their own)
+uv.lock
+
+# Resolved prompt docs (local only)
+*.resolved
