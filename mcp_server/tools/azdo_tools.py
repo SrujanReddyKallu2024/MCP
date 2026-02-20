@@ -41,7 +41,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 _session: requests.Session | None = None
 
-API_VERSION = "7.1"
+API_VERSION = "7.0"
 
 
 def _get_session() -> requests.Session:

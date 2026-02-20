@@ -155,7 +155,7 @@ def server_health_check() -> str:
             sess.verify = False
             resp = sess.get(
                 f"{AZDO_BASE_URL.rstrip('/')}/_apis/projects/{AZDO_PROJECT}",
-                params={"api-version": "7.1"},
+                params={"api-version": "7.0"},
                 timeout=15,
             )
             if resp.status_code == 200:

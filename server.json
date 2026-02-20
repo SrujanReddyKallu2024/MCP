@@ -1,19 +1,19 @@
 {
     "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
     "name": "local.experian/ops-mcp-server-consumersync",
-    "description": "Tools for MWAA, EMR Serverless, Confluence, and Azure DevOps (TFS). Includes DAG control, log reading, diagnosis, repo browsing, sprint tracking, and work items.",
+    "description": "Ops tools for Airflow DAGs, EMR Spark logs, Confluence, and Azure DevOps.",
     "title": "Ops Tools (MWAA, EMR, Confluence, Azure DevOps)",
     "repository": {
         "url": "https://code.experian.local/projects/ACCOSY/repos/ops-mcp-server-consumersync",
         "source": "experian-bitbucket"
     },
-    "version": "1.0.0",
+    "version": "1.2.0",
     "packages": [
         {
             "registryType": "pypi",
             "registryBaseUrl": "https://artifacts.experian.local/artifactory/api/pypi/pypi",
             "identifier": "ops-mcp-server",
-            "version": "1.0.0",
+            "version": "1.2.0",
             "transport": {
                 "type": "stdio"
             },
