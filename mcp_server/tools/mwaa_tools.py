@@ -7,7 +7,7 @@ directly via the MWAA web server endpoint.  This works for both public and
 
 Tools:
   • list_dags            — list all DAGs with schedule & pause status
-  • get_dag_runs         — DAG runs for today/yesterday/date with pass/fail
+  • get_dag_run_history         — DAG runs for today/yesterday/date with pass/fail
   • get_dag_run_details  — full task-level breakdown for one DAG run
   • get_task_log         — read the Airflow log of a single task attempt
   • trigger_dag          — manually trigger a DAG run
@@ -16,6 +16,7 @@ Tools:
   • clear_task_instance  — retry a failed task without re-triggering the DAG
   • get_dag_source       — get DAG source code, tasks, and metadata
   • get_dag_status_report — full dashboard of ALL DAGs with last run status
+  • get_dag_run_stats   — run statistics with trends, success rate, duration stats
 """
 
 from __future__ import annotations
@@ -30,11 +31,12 @@ import urllib3
 
 from mcp_server.config import (
     AWS_REGION,
-    AWS_PROFILE,
+    get_aws_profile,
     MWAA_ENVIRONMENTS,
     get_mwaa_env_name,
     validate_mwaa,
 )
+from mcp_server.tools._aws_helpers import fmt_duration
 
 # Suppress SSL warnings for internal/self-signed certs
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
@@ -45,7 +47,7 @@ urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 _sessions: dict[str, tuple[requests.Session, str]] = {}   # env_name → (session, hostname)
 
 
-def _get_airflow_session(env_name: str) -> tuple[requests.Session, str]:
+def _get_airflow_session(env_name: str, env: str | None = None) -> tuple[requests.Session, str]:
     """
     Create an authenticated requests.Session for the MWAA Airflow REST API.
 
@@ -56,8 +58,8 @@ def _get_airflow_session(env_name: str) -> tuple[requests.Session, str]:
     if env_name in _sessions:
         return _sessions[env_name]
 
-    # Fresh boto3 session each time (picks up refreshed creds from gimme-aws-creds)
-    boto_session = boto3.Session(region_name=AWS_REGION, profile_name=AWS_PROFILE)
+    # Fresh boto3 session — uses the env-specific AWS profile (different accounts)
+    boto_session = boto3.Session(region_name=AWS_REGION, profile_name=get_aws_profile(env))
     mwaa_client = boto_session.client("mwaa")
 
     session = requests.Session()
@@ -128,33 +130,24 @@ def _airflow_api(
         return {"error": err}
 
     env_name = get_mwaa_env_name(env)
+    verb = method.upper()
+
+    def _do_request(sess: requests.Session, host: str) -> requests.Response:
+        url = f"https://{host}{path}"
+        kwargs: dict[str, Any] = {"params": query_params, "timeout": 30}
+        if verb in ("POST", "PATCH", "PUT"):
+            kwargs["json"] = body
+        return sess.request(verb, url, **kwargs)
 
     try:
-        session, hostname = _get_airflow_session(env_name)
-        url = f"https://{hostname}{path}"
+        session, hostname = _get_airflow_session(env_name, env=env)
+        resp = _do_request(session, hostname)
 
-        if method.upper() == "GET":
-            resp = session.get(url, params=query_params, timeout=30)
-        elif method.upper() == "POST":
-            resp = session.post(url, json=body, params=query_params, timeout=30)
-        elif method.upper() == "PATCH":
-            resp = session.patch(url, json=body, params=query_params, timeout=30)
-        elif method.upper() == "DELETE":
-            resp = session.delete(url, params=query_params, timeout=30)
-        else:
-            return {"error": f"Unsupported HTTP method: {method}"}
-
-        # If we get a 403, clear session and retry once (token may have expired)
+        # Token may have expired — clear session and retry once
         if resp.status_code in (401, 403):
             _clear_session(env_name)
-            session, hostname = _get_airflow_session(env_name)
-            url = f"https://{hostname}{path}"
-            if method.upper() == "GET":
-                resp = session.get(url, params=query_params, timeout=30)
-            elif method.upper() == "POST":
-                resp = session.post(url, json=body, params=query_params, timeout=30)
-            else:
-                resp = session.request(method.upper(), url, json=body, params=query_params, timeout=30)
+            session, hostname = _get_airflow_session(env_name, env=env)
+            resp = _do_request(session, hostname)
 
         if resp.status_code >= 400:
             return {"error": f"Airflow API returned HTTP {resp.status_code}: {resp.text[:500]}"}
@@ -198,26 +191,7 @@ def _emoji(state: str | None) -> str:
     return _STATUS_EMOJI.get((state or "").lower(), "❓")
 
 
-def _fmt_duration(start: str | None, end: str | None) -> str:
-    """Human-readable duration between two ISO timestamps."""
-    if not start:
-        return "—"
-    try:
-        s = datetime.fromisoformat(start.replace("Z", "+00:00"))
-        if end:
-            e = datetime.fromisoformat(end.replace("Z", "+00:00"))
-        else:
-            e = datetime.now(timezone.utc)
-        delta = e - s
-        mins, secs = divmod(int(delta.total_seconds()), 60)
-        hrs, mins = divmod(mins, 60)
-        if hrs:
-            return f"{hrs}h {mins}m {secs}s"
-        if mins:
-            return f"{mins}m {secs}s"
-        return f"{secs}s"
-    except Exception:
-        return "—"
+_fmt_duration = fmt_duration
 
 
 def _env_header(env: str | None) -> str:
@@ -242,7 +216,7 @@ def list_dags(
     List all DAGs in the MWAA environment.
 
     Args:
-        env: Which environment — 'dev', 'test', or 'prod' (default: dev).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
         limit: Maximum number of DAGs to return (default 100).
         only_active: If True, show only unpaused DAGs.
 
@@ -277,7 +251,7 @@ def list_dags(
     return "\n".join(lines)
 
 
-def get_dag_runs(
+def get_dag_run_history(
     env: str | None = None,
     dag_id: str | None = None,
     date: str = "today",
@@ -291,7 +265,7 @@ def get_dag_runs(
     so the user can pick a specific run for deeper investigation.
 
     Args:
-        env: Which environment — 'dev', 'test', or 'prod' (default: dev).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
         dag_id: Optional — filter to a specific DAG. If omitted, shows ALL DAGs.
         date: 'today' (default), 'yesterday', 'last_week', or ISO date (e.g. '2026-02-15').
         limit: Max runs to return (default 50).
@@ -394,7 +368,7 @@ def get_dag_run_details(
     Args:
         dag_id: The DAG identifier.
         dag_run_id: The run ID (e.g. 'scheduled__2026-02-16T00:00:00+00:00' or 'manual__...').
-        env: Which environment — 'dev', 'test', or 'prod' (default: dev).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
 
     Returns formatted output showing each task with state, duration and try count.
     """
@@ -484,7 +458,7 @@ def get_task_log(
         dag_id: The DAG identifier.
         dag_run_id: The run ID.
         task_id: The task identifier.
-        env: Which environment — 'dev', 'test', or 'prod' (default: dev).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
         try_number: Which attempt (default 1).
         tail_lines: Number of lines to return from the end (default 200).
 
@@ -528,7 +502,7 @@ def trigger_dag(
 
     Args:
         dag_id: The DAG to trigger.
-        env: Which environment — 'dev', 'test', or 'prod' (default: dev).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
         conf: Optional JSON string of DAG run configuration.
 
     Returns confirmation with the new run ID.
@@ -559,7 +533,7 @@ def pause_dag(dag_id: str, env: str | None = None) -> str:
 
     Args:
         dag_id: The DAG to pause.
-        env: Which environment — 'dev', 'test', or 'prod' (default: dev).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
 
     Returns confirmation of the pause action.
     """
@@ -579,7 +553,7 @@ def unpause_dag(dag_id: str, env: str | None = None) -> str:
 
     Args:
         dag_id: The DAG to unpause.
-        env: Which environment — 'dev', 'test', or 'prod' (default: dev).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
 
     Returns confirmation of the unpause action.
     """
@@ -611,7 +585,7 @@ def clear_task_instance(
         dag_id: The DAG identifier.
         dag_run_id: The run ID.
         task_id: The task to clear/retry.
-        env: Which environment — 'dev', 'test', or 'prod' (default: dev).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
         include_downstream: If True, also clear all downstream tasks (default: False).
 
     Returns confirmation with the list of cleared task instances.
@@ -659,7 +633,7 @@ def get_dag_source(dag_id: str, env: str | None = None) -> str:
 
     Args:
         dag_id: The DAG identifier.
-        env: Which environment — 'dev', 'test', or 'prod' (default: dev).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
 
     Returns the DAG details including file location, schedule, tags, and task list.
     """
@@ -757,7 +731,7 @@ def get_dag_status_report(
       - Failed DAGs highlighted at the bottom with diagnosis commands
 
     Args:
-        env: Which environment — 'dev', 'test', or 'prod' (default: dev).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
         limit: Maximum number of DAGs to return (default 100).
 
     Returns a formatted status report with every DAG and its current health.
@@ -844,5 +818,225 @@ def get_dag_status_report(
         lines.append(f"⏳ **{len(running_dags)} DAG(s) currently RUNNING:**")
         for rd in running_dags:
             lines.append(f"   • {rd}")
+
+    return "\n".join(lines)
+
+
+def get_dag_run_stats(
+    dag_id: str,
+    env: str | None = None,
+    days: int = 14,
+) -> str:
+    """
+    Get run statistics and trend analysis for a specific DAG.
+
+    Use this when the user asks about DAG reliability, performance trends,
+    statistics, or historical patterns — "how's digital taxonomy been running?",
+    "is this DAG stable?", "show me stats for HEM processing".
+
+    Unlike get_dag_run_history (flat list of individual runs), this tool provides:
+      - Success rate and failure rate over the time period
+      - Duration stats: average, min, max, and trend direction
+      - Failure pattern detection (e.g. "fails on Mondays")
+      - Recent run streak (visual ✅/❌ sequence)
+      - Day-by-day breakdown
+
+    Args:
+        dag_id: The DAG identifier to analyse.
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        days: Number of days to look back (default: 14, max: 90).
+
+    Returns a formatted analytics report with trends and patterns.
+    """
+    days = max(1, min(days, 90))
+
+    now = datetime.now(timezone.utc)
+    start_dt = (now - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)
+
+    body: dict[str, Any] = {
+        "dag_ids": [dag_id],
+        "execution_date_gte": start_dt.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+        "execution_date_lte": now.strftime("%Y-%m-%dT%H:%M:%S+00:00"),
+        "page_limit": 500,
+        "order_by": "-execution_date",
+    }
+
+    data = _airflow_api("POST", "/api/v1/dags/~/dagRuns/list", env=env, body=body)
+    if "error" in data:
+        return data["error"]
+
+    runs = data.get("dag_runs", [])
+    if not runs:
+        return _env_header(env) + f"No runs found for **{dag_id}** in the last {days} days."
+
+    # ── Classify runs ──
+    completed_runs = []       # runs with a definite end state
+    durations_secs: list[float] = []
+    state_counts: dict[str, int] = {}
+    day_results: dict[str, list[str]] = {}   # date_str → [state, state, ...]
+    weekday_failures: dict[str, int] = {}    # "Monday" → count
+
+    for run in runs:
+        state = run.get("state", "unknown")
+        state_counts[state] = state_counts.get(state, 0) + 1
+
+        start = run.get("start_date")
+        end = run.get("end_date")
+        exec_date = run.get("execution_date", "")
+
+        # Day-by-day tracking
+        date_str = exec_date[:10] if exec_date else "unknown"
+        day_results.setdefault(date_str, []).append(state)
+
+        # Duration calculation (only for runs that have finished)
+        if start and end and state in ("success", "failed"):
+            completed_runs.append(run)
+            try:
+                s = datetime.fromisoformat(start.replace("Z", "+00:00"))
+                e = datetime.fromisoformat(end.replace("Z", "+00:00"))
+                dur_secs = (e - s).total_seconds()
+                if dur_secs > 0:
+                    durations_secs.append(dur_secs)
+            except Exception:
+                pass
+
+        # Weekday failure tracking
+        if state == "failed" and exec_date:
+            try:
+                dt = datetime.fromisoformat(exec_date[:10])
+                day_name = dt.strftime("%A")
+                weekday_failures[day_name] = weekday_failures.get(day_name, 0) + 1
+            except Exception:
+                pass
+
+    total = len(runs)
+    success_count = state_counts.get("success", 0)
+    failed_count = state_counts.get("failed", 0)
+    running_count = state_counts.get("running", 0)
+
+    success_rate = (success_count / total * 100) if total > 0 else 0
+    failure_rate = (failed_count / total * 100) if total > 0 else 0
+
+    # ── Duration stats ──
+    def _secs_to_str(s: float) -> str:
+        mins, secs = divmod(int(s), 60)
+        hrs, mins = divmod(mins, 60)
+        if hrs:
+            return f"{hrs}h {mins}m"
+        return f"{mins}m {secs}s"
+
+    avg_dur = sum(durations_secs) / len(durations_secs) if durations_secs else 0
+    min_dur = min(durations_secs) if durations_secs else 0
+    max_dur = max(durations_secs) if durations_secs else 0
+
+    # ── Duration trend (compare first half vs second half) ──
+    trend_label = "—"
+    if len(durations_secs) >= 4:
+        mid = len(durations_secs) // 2
+        # runs are ordered newest-first, so second half = older runs
+        recent_avg = sum(durations_secs[:mid]) / mid
+        older_avg = sum(durations_secs[mid:]) / (len(durations_secs) - mid)
+        diff_pct = ((recent_avg - older_avg) / older_avg * 100) if older_avg > 0 else 0
+        if diff_pct > 10:
+            trend_label = f"📈 Increasing (+{diff_pct:.0f}% — recent avg {_secs_to_str(recent_avg)} vs older avg {_secs_to_str(older_avg)})"
+        elif diff_pct < -10:
+            trend_label = f"📉 Decreasing ({diff_pct:.0f}% — recent avg {_secs_to_str(recent_avg)} vs older avg {_secs_to_str(older_avg)})"
+        else:
+            trend_label = f"➡️ Stable (recent avg {_secs_to_str(recent_avg)} ≈ older avg {_secs_to_str(older_avg)})"
+
+    # ── Recent run streak ──
+    streak_icons = []
+    for run in runs[:15]:   # last 15 runs, newest first
+        st = run.get("state", "unknown")
+        if st == "success":
+            streak_icons.append("✅")
+        elif st == "failed":
+            streak_icons.append("❌")
+        elif st == "running":
+            streak_icons.append("⏳")
+        else:
+            streak_icons.append("⚪")
+
+    # ── Failure pattern detection ──
+    failure_patterns: list[str] = []
+    if failed_count >= 2 and weekday_failures:
+        top_day = max(weekday_failures, key=weekday_failures.get)  # type: ignore[arg-type]
+        top_count = weekday_failures[top_day]
+        if top_count >= 2 and top_count >= failed_count * 0.5:
+            failure_patterns.append(f"⚠️ {top_count} of {failed_count} failures happened on **{top_day}**")
+
+    # Check for consecutive failures
+    consec_fail = 0
+    max_consec = 0
+    for run in runs:
+        if run.get("state") == "failed":
+            consec_fail += 1
+            max_consec = max(max_consec, consec_fail)
+        else:
+            consec_fail = 0
+    if max_consec >= 3:
+        failure_patterns.append(f"⚠️ Longest failure streak: **{max_consec} consecutive failures**")
+
+    # Check if failures are recent
+    recent_runs = runs[:5] if len(runs) >= 5 else runs
+    recent_fails = sum(1 for r in recent_runs if r.get("state") == "failed")
+    if recent_fails >= 3:
+        failure_patterns.append(f"🔴 **{recent_fails} of last {len(recent_runs)} runs failed** — needs attention")
+
+    # ── Build output ──
+    lines = [
+        _env_header(env),
+        f"📊 **Run History: {dag_id}** — last {days} days\n",
+        f"**Overview:**",
+        f"   Total runs     : {total}",
+        f"   ✅ Success      : {success_count} ({success_rate:.1f}%)",
+        f"   ❌ Failed       : {failed_count} ({failure_rate:.1f}%)",
+    ]
+    if running_count:
+        lines.append(f"   ⏳ Running      : {running_count}")
+    other = total - success_count - failed_count - running_count
+    if other > 0:
+        lines.append(f"   ⚪ Other        : {other}")
+
+    lines.append("")
+    lines.append("**Duration Stats:**")
+    if durations_secs:
+        lines.append(f"   Average        : {_secs_to_str(avg_dur)}")
+        lines.append(f"   Fastest        : {_secs_to_str(min_dur)}")
+        lines.append(f"   Slowest        : {_secs_to_str(max_dur)}")
+        lines.append(f"   Trend          : {trend_label}")
+    else:
+        lines.append("   No completed runs with duration data.")
+
+    lines.append("")
+    lines.append(f"**Recent Runs** (newest → oldest):")
+    lines.append(f"   {' '.join(streak_icons)}")
+
+    if failure_patterns:
+        lines.append("")
+        lines.append("**Failure Patterns:**")
+        for pattern in failure_patterns:
+            lines.append(f"   {pattern}")
+
+    # ── Day-by-day breakdown ──
+    sorted_days = sorted(day_results.keys(), reverse=True)
+    if sorted_days:
+        lines.append("")
+        lines.append("**Day-by-Day:**")
+        lines.append(f"   {'Date':<14} {'Runs':<6} {'Result'}")
+        lines.append("   " + "─" * 50)
+        for day_str in sorted_days[:days]:
+            states = day_results[day_str]
+            run_count = len(states)
+            icons = " ".join(_emoji(s) for s in states)
+            lines.append(f"   {day_str:<14} {run_count:<6} {icons}")
+
+    # ── Hints ──
+    lines.append("")
+    if failed_count > 0:
+        lines.append(f"💡 To investigate failures: `get_dag_run_history(dag_id='{dag_id}', date='last_week', env='{env or 'dev'}')`")
+        lines.append(f"💡 Quick diagnosis: `diagnose_dag_failure(dag_id='{dag_id}', env='{env or 'dev'}')`")
+    else:
+        lines.append(f"💡 For individual run details: `get_dag_run_history(dag_id='{dag_id}', date='last_week', env='{env or 'dev'}')`")
 
     return "\n".join(lines)

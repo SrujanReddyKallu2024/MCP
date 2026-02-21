@@ -15,7 +15,7 @@ import re
 from typing import Any
 
 from mcp_server.tools.mwaa_tools import (
-    get_dag_runs,
+    get_dag_run_history,
     get_dag_run_details,
     get_task_log,
     _airflow_api,
@@ -50,7 +50,7 @@ def diagnose_dag_failure(
 
     Args:
         dag_id: The DAG to diagnose (e.g. 'ttdcustom_processing').
-        env: Which environment — 'dev', 'test', or 'prod' (default: dev).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
         date: Optional date to check (ISO format or 'yesterday'). Default: today.
 
     Returns a comprehensive failure report with root cause analysis.
@@ -59,7 +59,7 @@ def diagnose_dag_failure(
 
     # ── Step 1: Find the failed run ──
     target_date = date or "today"
-    runs_output = get_dag_runs(dag_id=dag_id, env=env, date=target_date, limit=10)
+    runs_output = get_dag_run_history(dag_id=dag_id, env=env, date=target_date, limit=10)
 
     # Parse runs to find a failed one by querying the API directly
     from datetime import datetime, timezone, timedelta
@@ -220,7 +220,7 @@ def diagnose_dag_failure(
     if emr_app_id:
         # If we don't have a job ID yet, try listing jobs
         if not emr_job_id:
-            jobs_output = list_job_runs(application_id=emr_app_id, states="FAILED", max_results=5)
+            jobs_output = list_job_runs(application_id=emr_app_id, states="FAILED", max_results=5, env=env)
             # Try to extract job ID from output
             job_match = re.search(r"Job ID\s*:\s*(00g\w+)", jobs_output)
             if job_match:
@@ -240,6 +240,7 @@ def diagnose_dag_failure(
                 log_type="stdout",
                 tail_lines=100,
                 process_name=process_name,
+                env=env,
             )
             lines.append(stdout_log)
             lines.append("")
@@ -253,6 +254,7 @@ def diagnose_dag_failure(
                 tail_lines=50,
                 search_text="ERROR",
                 process_name=process_name,
+                env=env,
             )
             lines.append(stderr_log)
             lines.append("")

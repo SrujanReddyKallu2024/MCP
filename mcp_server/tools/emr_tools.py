@@ -22,36 +22,30 @@ Tools:
 from __future__ import annotations
 
 import gzip
-
-import json
 from datetime import datetime, timezone
 from typing import Any
 
 import boto3
 
-from mcp_server.config import AWS_REGION, AWS_PROFILE, EMR_LOG_BUCKET, EMR_LOG_PREFIX
+from mcp_server.config import AWS_REGION, get_aws_profile, get_emr_log_bucket, EMR_LOG_PREFIX, validate_env, aws_env_header
+from mcp_server.tools._aws_helpers import get_s3_client, fmt_duration, fmt_size
 
 
-# ── Boto3 client singletons ──────────────────────────────────────────────────
+# ── Boto3 client caches (keyed by resolved profile name) ────────────────────
 
-_emr_client = None
-_s3_client = None
-
-
-def _get_emr():
-    global _emr_client
-    if _emr_client is None:
-        session = boto3.Session(region_name=AWS_REGION, profile_name=AWS_PROFILE)
-        _emr_client = session.client("emr-serverless")
-    return _emr_client
+_emr_clients: dict[str, Any] = {}
 
 
-def _get_s3():
-    global _s3_client
-    if _s3_client is None:
-        session = boto3.Session(region_name=AWS_REGION, profile_name=AWS_PROFILE)
-        _s3_client = session.client("s3")
-    return _s3_client
+def _get_emr(env: str | None = None):
+    profile = get_aws_profile(env) or "default"
+    if profile not in _emr_clients:
+        session = boto3.Session(region_name=AWS_REGION, profile_name=profile)
+        _emr_clients[profile] = session.client("emr-serverless")
+    return _emr_clients[profile]
+
+
+# Use shared S3 client from _aws_helpers
+_get_s3 = get_s3_client
 
 
 # ── Formatting helpers ───────────────────────────────────────────────────────
@@ -76,34 +70,7 @@ def _emoji(state: str | None) -> str:
     return _STATE_EMOJI.get((state or "").lower(), "❓")
 
 
-def _fmt_duration(start: Any, end: Any) -> str:
-    """Human-readable duration."""
-    if not start:
-        return "—"
-    try:
-        if isinstance(start, str):
-            s = datetime.fromisoformat(start.replace("Z", "+00:00"))
-        else:
-            s = start if start.tzinfo else start.replace(tzinfo=timezone.utc)
-
-        if end:
-            if isinstance(end, str):
-                e = datetime.fromisoformat(end.replace("Z", "+00:00"))
-            else:
-                e = end if end.tzinfo else end.replace(tzinfo=timezone.utc)
-        else:
-            e = datetime.now(timezone.utc)
-
-        delta = e - s
-        mins, secs = divmod(int(delta.total_seconds()), 60)
-        hrs, mins = divmod(mins, 60)
-        if hrs:
-            return f"{hrs}h {mins}m {secs}s"
-        if mins:
-            return f"{mins}m {secs}s"
-        return f"{secs}s"
-    except Exception:
-        return "—"
+_fmt_duration = fmt_duration
 
 
 def _parse_s3_uri(uri: str) -> tuple[str, str]:
@@ -113,9 +80,9 @@ def _parse_s3_uri(uri: str) -> tuple[str, str]:
     return bucket, key
 
 
-def _read_s3_object(bucket: str, key: str) -> str | None:
+def _read_s3_object(bucket: str, key: str, env: str | None = None) -> str | None:
     """Read an S3 object, auto-decompress gzip, return text or None."""
-    s3 = _get_s3()
+    s3 = _get_s3(env)
     try:
         obj = s3.get_object(Bucket=bucket, Key=key)
         raw = obj["Body"].read()
@@ -130,13 +97,7 @@ def _read_s3_object(bucket: str, key: str) -> str | None:
         return None
 
 
-def _fmt_size(size_bytes: int) -> str:
-    """Format bytes to human-readable size."""
-    for unit in ("B", "KB", "MB", "GB"):
-        if size_bytes < 1024:
-            return f"{size_bytes:.1f} {unit}"
-        size_bytes /= 1024
-    return f"{size_bytes:.1f} TB"
+_fmt_size = fmt_size
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -144,7 +105,7 @@ def _fmt_size(size_bytes: int) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 
-def list_emr_applications(states: str | None = None) -> str:
+def list_emr_applications(states: str | None = None, env: str | None = None) -> str:
     """
     List all EMR Serverless applications.
 
@@ -155,10 +116,15 @@ def list_emr_applications(states: str | None = None) -> str:
 
     Args:
         states: Optional comma-separated state filter (e.g. 'STARTED,CREATED').
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
 
     Returns a formatted list of applications with IDs, types and states.
     """
-    client = _get_emr()
+    err = validate_env(env)
+    if err:
+        return err
+
+    client = _get_emr(env)
     kwargs: dict[str, Any] = {"maxResults": 50}
     if states:
         kwargs["states"] = [s.strip().upper() for s in states.split(",")]
@@ -170,9 +136,9 @@ def list_emr_applications(states: str | None = None) -> str:
 
     apps = resp.get("applications", [])
     if not apps:
-        return "No EMR Serverless applications found."
+        return aws_env_header(env) + "No EMR Serverless applications found."
 
-    lines = [f"🖥️ **{len(apps)} EMR Serverless Application(s)**\n"]
+    lines = [aws_env_header(env), f"🖥️ **{len(apps)} EMR Serverless Application(s)**\n"]
     for app in apps:
         emoji = _emoji(app.get("state", ""))
         lines.append(f"{emoji} **{app.get('name', '?')}**")
@@ -192,6 +158,7 @@ def list_job_runs(
     max_results: int = 30,
     states: str | None = None,
     created_after: str | None = None,
+    env: str | None = None,
 ) -> str:
     """
     List job runs for an EMR Serverless application.
@@ -201,10 +168,15 @@ def list_job_runs(
         max_results: Max runs to return (default 30).
         states: Optional comma-separated state filter (e.g. 'SUCCESS,FAILED').
         created_after: Optional ISO date — only runs after this date (e.g. '2026-02-16').
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
 
     Returns a list of job runs with status, timing and duration.
     """
-    client = _get_emr()
+    err = validate_env(env)
+    if err:
+        return err
+
+    client = _get_emr(env)
     kwargs: dict[str, Any] = {
         "applicationId": application_id,
         "maxResults": max_results,
@@ -224,9 +196,9 @@ def list_job_runs(
 
     runs = resp.get("jobRuns", [])
     if not runs:
-        return f"No job runs found for application `{application_id}`."
+        return aws_env_header(env) + f"No job runs found for application `{application_id}`."
 
-    lines = [f"🚀 **{len(runs)} Job Run(s) for `{application_id}`**\n"]
+    lines = [aws_env_header(env), f"🚀 **{len(runs)} Job Run(s) for `{application_id}`**\n"]
     for run in runs:
         state = run.get("state", "?")
         emoji = _emoji(state)
@@ -240,7 +212,7 @@ def list_job_runs(
     return "\n".join(lines)
 
 
-def get_job_run_details(application_id: str, job_run_id: str) -> str:
+def get_job_run_details(application_id: str, job_run_id: str, env: str | None = None) -> str:
     """
     Get detailed information about a specific EMR Serverless job run.
 
@@ -251,10 +223,15 @@ def get_job_run_details(application_id: str, job_run_id: str) -> str:
     Args:
         application_id: The EMR Serverless application ID (from Airflow 'initialise' task log).
         job_run_id: The job run ID (from Airflow processing task log).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
 
     Returns comprehensive details: state, config, resource usage, S3 log paths.
     """
-    client = _get_emr()
+    err = validate_env(env)
+    if err:
+        return err
+
+    client = _get_emr(env)
 
     try:
         resp = client.get_job_run(applicationId=application_id, jobRunId=job_run_id)
@@ -266,6 +243,7 @@ def get_job_run_details(application_id: str, job_run_id: str) -> str:
     emoji = _emoji(state)
 
     lines = [
+        aws_env_header(env),
         f"{emoji} **Job Run: {run.get('name', job_run_id)}**",
         f"   Job ID        : {run.get('jobRunId', '?')}",
         f"   Application   : {run.get('applicationId', '?')}",
@@ -300,7 +278,7 @@ def get_job_run_details(application_id: str, job_run_id: str) -> str:
         lines.append("**S3 Log Location:**")
         lines.append(f"   Log URI : {log_uri}")
         lines.append(f"   💡 Use `read_spark_driver_log(application_id='{application_id}', job_run_id='{job_run_id}')` to read logs")
-        lines.append(f"   💡 Use `browse_s3_logs(prefix='{log_uri.replace('s3://' + EMR_LOG_BUCKET + '/', '')}')` to browse")
+        lines.append(f"   💡 Use `browse_s3_logs(prefix='{log_uri.replace('s3://' + get_emr_log_bucket(env) + '/', '')}')` to browse")
 
     # Resource utilization
     ru = run.get("totalResourceUtilization", {})
@@ -331,6 +309,7 @@ def read_spark_driver_log(
     search_text: str | None = None,
     bucket: str | None = None,
     read_both: bool = False,
+    env: str | None = None,
 ) -> str:
     """
     Read the Spark driver log from S3 for an EMR Serverless job run.
@@ -363,6 +342,10 @@ def read_spark_driver_log(
 
     Returns the log content, optionally filtered and tailed.
     """
+    err = validate_env(env)
+    if err:
+        return err
+
     # If read_both, get stdout first then stderr (errors only)
     if read_both:
         stdout_result = read_spark_driver_log(
@@ -373,6 +356,7 @@ def read_spark_driver_log(
             tail_lines=tail_lines,
             search_text=search_text,
             bucket=bucket,
+            env=env,
         )
         stderr_result = read_spark_driver_log(
             application_id=application_id,
@@ -382,6 +366,7 @@ def read_spark_driver_log(
             tail_lines=min(tail_lines, 100),
             search_text="ERROR",
             bucket=bucket,
+            env=env,
         )
         return (
             "═══ STDOUT (Python App Output — primary log) ═══\n"
@@ -390,14 +375,14 @@ def read_spark_driver_log(
             + stderr_result
         )
 
-    s3 = _get_s3()
-    log_bucket = bucket or EMR_LOG_BUCKET
+    s3 = _get_s3(env)
+    log_bucket = bucket or get_emr_log_bucket(env)
     prefix = EMR_LOG_PREFIX.strip("/")
 
     # If full URI given, read directly
     if s3_log_uri:
         b, k = _parse_s3_uri(s3_log_uri)
-        content = _read_s3_object(b, k)
+        content = _read_s3_object(b, k, env=env)
         if content is None:
             return f"❌ Could not read: {s3_log_uri}"
         return _format_log_output(content, f"s3://{b}/{k}", log_type, tail_lines, search_text)
@@ -436,12 +421,12 @@ def read_spark_driver_log(
 
     # Try each candidate
     for key in candidates:
-        content = _read_s3_object(log_bucket, key)
+        content = _read_s3_object(log_bucket, key, env=env)
         if content is not None:
             return _format_log_output(content, f"s3://{log_bucket}/{key}", log_type, tail_lines, search_text)
 
     # Not found — try listing to help the user
-    return _find_log_suggestions(log_bucket, prefix, application_id, job_run_id, log_type)
+    return _find_log_suggestions(log_bucket, prefix, application_id, job_run_id, log_type, env=env)
 
 
 def _format_log_output(
@@ -476,9 +461,10 @@ def _find_log_suggestions(
     app_id: str,
     job_id: str,
     log_type: str,
+    env: str | None = None,
 ) -> str:
     """When log not found, list available files to help the user."""
-    s3 = _get_s3()
+    s3 = _get_s3(env)
     lines = [f"❌ Spark driver `{log_type}` log not found.\n"]
 
     # Try listing under app_id
@@ -527,6 +513,7 @@ def browse_s3_logs(
     prefix: str | None = None,
     bucket: str | None = None,
     max_items: int = 100,
+    env: str | None = None,
 ) -> str:
     """
     Browse the S3 log directory structure. Navigate into folders to find logs.
@@ -536,11 +523,16 @@ def browse_s3_logs(
                 Use the output to navigate deeper, e.g. 'spark-logs/ttdgeo_metadata_SE/'.
         bucket: S3 bucket (default from config).
         max_items: Max items to show (default 50).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
 
     Returns a directory listing of the S3 prefix showing folders and files.
     """
-    s3 = _get_s3()
-    log_bucket = bucket or EMR_LOG_BUCKET
+    err = validate_env(env)
+    if err:
+        return err
+
+    s3 = _get_s3(env)
+    log_bucket = bucket or get_emr_log_bucket(env)
     log_prefix = prefix or (EMR_LOG_PREFIX.strip("/") + "/")
 
     # Ensure trailing slash for directory listing
@@ -561,9 +553,9 @@ def browse_s3_logs(
     files = resp.get("Contents", [])
 
     if not folders and not files:
-        return f"📂 Empty: `s3://{log_bucket}/{log_prefix}` — no files or folders found."
+        return aws_env_header(env) + f"📂 Empty: `s3://{log_bucket}/{log_prefix}` — no files or folders found."
 
-    lines = [f"📂 **Browsing: `s3://{log_bucket}/{log_prefix}`**\n"]
+    lines = [aws_env_header(env), f"📂 **Browsing: `s3://{log_bucket}/{log_prefix}`**\n"]
 
     # Show folders
     if folders:
@@ -596,7 +588,7 @@ def browse_s3_logs(
     return "\n".join(lines)
 
 
-def cancel_job_run(application_id: str, job_run_id: str) -> str:
+def cancel_job_run(application_id: str, job_run_id: str, env: str | None = None) -> str:
     """
     Cancel a running or pending EMR Serverless job run.
 
@@ -607,10 +599,15 @@ def cancel_job_run(application_id: str, job_run_id: str) -> str:
     Args:
         application_id: The EMR Serverless application ID.
         job_run_id: The job run ID to cancel.
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
 
     Returns confirmation of the cancellation request.
     """
-    client = _get_emr()
+    err = validate_env(env)
+    if err:
+        return err
+
+    client = _get_emr(env)
 
     try:
         client.cancel_job_run(applicationId=application_id, jobRunId=job_run_id)
@@ -630,6 +627,7 @@ def read_s3_file(
     s3_uri: str,
     tail_lines: int = 100,
     search_text: str | None = None,
+    env: str | None = None,
 ) -> str:
     """
     Read any file from S3 by its full URI.
@@ -641,17 +639,22 @@ def read_s3_file(
         s3_uri: Full S3 URI (e.g. 's3://bucket-name/path/to/file.csv').
         tail_lines: Number of lines from the end to return (default 100). Set to -1 for all.
         search_text: Optional text to filter matching lines.
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
 
     Returns the file contents, optionally filtered and tailed.
     """
+    err = validate_env(env)
+    if err:
+        return err
+
     if not s3_uri.startswith("s3://"):
-        return f"❌ Invalid S3 URI: '{s3_uri}'. Must start with 's3://'."
+        return "❌ Invalid S3 URI: '{s3_uri}'. Must start with 's3://' (e.g. 's3://bucket-name/path/to/file.csv')."
 
     bucket, key = _parse_s3_uri(s3_uri)
     if not key:
         return f"❌ No key/path specified in URI: '{s3_uri}'."
 
-    content = _read_s3_object(bucket, key)
+    content = _read_s3_object(bucket, key, env=env)
     if content is None:
         return f"❌ Could not read `{s3_uri}`. Check that the file exists and you have access."
 
@@ -677,6 +680,7 @@ def read_s3_file(
 def get_emr_cost_summary(
     application_id: str | None = None,
     days: int = 7,
+    env: str | None = None,
 ) -> str:
     """
     Get a summary of EMR Serverless resource usage and estimated costs.
@@ -687,10 +691,15 @@ def get_emr_cost_summary(
     Args:
         application_id: Optional — filter to one application. If omitted, scans all.
         days: Number of days to look back (default 7).
+        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
 
     Returns a cost summary with per-job and total resource usage.
     """
-    client = _get_emr()
+    err = validate_env(env)
+    if err:
+        return err
+
+    client = _get_emr(env)
     from datetime import timedelta
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=days)
@@ -766,6 +775,7 @@ def get_emr_cost_summary(
         return f"No job runs found in the last {days} day(s)."
 
     lines = [
+        aws_env_header(env),
         f"💰 **EMR Serverless Cost Summary — Last {days} Day(s)**",
         "",
         f"**Totals across {job_count} job(s), {len(per_app)} app(s):**",

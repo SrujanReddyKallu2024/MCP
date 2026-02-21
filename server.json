@@ -1,8 +1,8 @@
 {
     "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
     "name": "local.experian/ops-mcp-server-consumersync",
-    "description": "Ops tools for Airflow DAGs, EMR Spark logs, Confluence, and Azure DevOps.",
-    "title": "Ops Tools (MWAA, EMR, Confluence, Azure DevOps)",
+    "description": "Ops tools for Airflow DAGs, EMR Spark logs, S3 browsing, Confluence, and Azure DevOps.",
+    "title": "Ops Tools (MWAA, EMR, S3, Confluence, Azure DevOps)",
     "repository": {
         "url": "https://code.experian.local/projects/ACCOSY/repos/ops-mcp-server-consumersync",
         "source": "experian-bitbucket"
@@ -11,7 +11,7 @@
     "packages": [
         {
             "registryType": "pypi",
-            "registryBaseUrl": "https://artifacts.experian.local/artifactory/api/pypi/pypi",
+            "registryBaseUrl": "https://artifacts.experian.local/artifactory/api/pypi/pypi/simple",
             "identifier": "ops-mcp-server",
             "version": "1.2.0",
             "transport": {
@@ -24,29 +24,69 @@
                     "value": "eu-west-2"
                 },
                 {
-                    "name": "AWS_PROFILE",
-                    "description": "AWS CLI profile name (run gimme-aws-creds first)",
-                    "value": "consumersync"
+                    "name": "DEFAULT_ENV",
+                    "description": "Default environment when env param is omitted (dev/uat/test/prod)",
+                    "value": "dev"
+                },
+                {
+                    "name": "AWS_PROFILE_DEV",
+                    "description": "AWS CLI profile for DEV account (run gimme-aws-creds -p consumersync-dev first)",
+                    "value": "consumersync-dev"
+                },
+                {
+                    "name": "AWS_PROFILE_UAT",
+                    "description": "AWS CLI profile for UAT account (run gimme-aws-creds -p consumersync-uat first)",
+                    "value": "consumersync-uat"
+                },
+                {
+                    "name": "AWS_PROFILE_TEST",
+                    "description": "AWS CLI profile for TEST account (run gimme-aws-creds -p consumersync-test first)",
+                    "value": "consumersync-test"
+                },
+                {
+                    "name": "AWS_PROFILE_PROD",
+                    "description": "AWS CLI profile for PROD account (run gimme-aws-creds -p consumersync-prod first)",
+                    "value": "consumersync-prod"
                 },
                 {
                     "name": "MWAA_ENV_DEV",
-                    "description": "MWAA environment name for dev tier",
+                    "description": "MWAA environment name for DEV tier",
                     "value": "eec-aws-uk-ms-dev-consumersyncenv-mwaa"
                 },
                 {
+                    "name": "MWAA_ENV_UAT",
+                    "description": "MWAA environment name for UAT tier",
+                    "value": "eec-aws-uk-ms-uat-consumersync-mwaa"
+                },
+                {
                     "name": "MWAA_ENV_TEST",
-                    "description": "MWAA environment name for test tier",
-                    "value": "eec-aws-uk-ms-tst-consumersyncenv-mwaa"
+                    "description": "MWAA environment name for TEST tier",
+                    "value": "eec-aws-uk-ms-tst-consumersync-mwaa"
                 },
                 {
                     "name": "MWAA_ENV_PROD",
-                    "description": "MWAA environment name for prod tier",
-                    "value": "eec-aws-uk-ms-prod-consumersyncenv-mwaa"
+                    "description": "MWAA environment name for PROD tier",
+                    "value": "eec-aws-uk-ms-prod-consumersync-mwaa"
                 },
                 {
-                    "name": "EMR_LOG_BUCKET",
-                    "description": "S3 bucket for EMR Serverless Spark driver logs",
+                    "name": "EMR_LOG_BUCKET_DEV",
+                    "description": "S3 bucket for EMR Spark logs in DEV",
                     "value": "eec-aws-uk-ms-consumersync-dev-logs-bucket"
+                },
+                {
+                    "name": "EMR_LOG_BUCKET_UAT",
+                    "description": "S3 bucket for EMR Spark logs in UAT",
+                    "value": "eec-aws-uk-ms-consumersync-uat-logs-bucket"
+                },
+                {
+                    "name": "EMR_LOG_BUCKET_TEST",
+                    "description": "S3 bucket for EMR Spark logs in TEST",
+                    "value": "eec-aws-uk-ms-consumersync-tst-logs-bucket"
+                },
+                {
+                    "name": "EMR_LOG_BUCKET_PROD",
+                    "description": "S3 bucket for EMR Spark logs in PROD",
+                    "value": "eec-aws-uk-ms-consumersync-prod-logs-bucket"
                 },
                 {
                     "name": "EMR_LOG_PREFIX",
@@ -109,6 +149,7 @@
                 "airflow",
                 "emr",
                 "spark",
+                "s3",
                 "confluence",
                 "azure-devops",
                 "tfs",

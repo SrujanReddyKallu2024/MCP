@@ -16,10 +16,11 @@ import urllib3
 
 from mcp_server.config import (
     AWS_REGION,
-    AWS_PROFILE,
+    AWS_PROFILES,
+    get_aws_profile,
     MWAA_ENVIRONMENTS,
     DEFAULT_MWAA_ENV,
-    EMR_LOG_BUCKET,
+    EMR_LOG_BUCKETS,
     EMR_LOG_PREFIX,
     CONFLUENCE_BASE_URL,
     CONFLUENCE_PAT,
@@ -36,8 +37,9 @@ def server_health_check() -> str:
     """
     Check connectivity to all configured services.
 
-    Tests AWS credentials, MWAA environments, EMR Serverless API,
-    S3 log bucket access, Confluence PAT, and Azure DevOps connectivity.
+    Tests AWS credentials for each environment (dev/uat/test/prod),
+    MWAA environments, EMR Serverless API, S3 log bucket access per env,
+    S3 general access, Confluence PAT, and Azure DevOps connectivity.
 
     Use this FIRST to verify everything is connected before running
     other tools. Requires VPN and valid AWS credentials.
@@ -46,20 +48,19 @@ def server_health_check() -> str:
     """
     lines = ["🏥 **Ops-Tools Health Check**\n"]
 
-    # ── AWS Credentials ──
-    try:
-        session = boto3.Session(region_name=AWS_REGION, profile_name=AWS_PROFILE)
-        sts = session.client("sts")
-        identity = sts.get_caller_identity()
-        account = identity.get("Account", "?")
-        arn = identity.get("Arn", "?")
-        lines.append("✅ **AWS Credentials**")
-        lines.append(f"   Account : {account}")
-        lines.append(f"   ARN     : {arn}")
-        lines.append(f"   Region  : {AWS_REGION}")
-        lines.append(f"   Profile : {AWS_PROFILE or 'default'}")
-    except Exception as exc:
-        lines.append(f"❌ **AWS Credentials** — {exc}")
+    # ── AWS Credentials (per environment) ──
+    lines.append("**AWS Credentials (per environment):**")
+    for env_tag, profile in sorted(AWS_PROFILES.items()):
+        try:
+            session = boto3.Session(region_name=AWS_REGION, profile_name=profile)
+            sts = session.client("sts")
+            identity = sts.get_caller_identity()
+            account = identity.get("Account", "?")
+            lines.append(f"  ✅ **{env_tag.upper()}** — profile `{profile}` → account {account}")
+        except Exception as exc:
+            short_err = str(exc)[:80]
+            lines.append(f"  ❌ **{env_tag.upper()}** — profile `{profile}`: {short_err}")
+    lines.append(f"   Region: {AWS_REGION}")
     lines.append("")
 
     # ── MWAA Environments ──
@@ -76,8 +77,9 @@ def server_health_check() -> str:
     if MWAA_ENVIRONMENTS:
         default_env = MWAA_ENVIRONMENTS.get(DEFAULT_MWAA_ENV)
         if default_env:
+            default_profile = get_aws_profile(DEFAULT_MWAA_ENV)
             try:
-                session = boto3.Session(region_name=AWS_REGION, profile_name=AWS_PROFILE)
+                session = boto3.Session(region_name=AWS_REGION, profile_name=default_profile)
                 mwaa = session.client("mwaa")
                 token_resp = mwaa.create_web_login_token(Name=default_env)
                 hostname = token_resp.get("WebServerHostname", "?")
@@ -87,9 +89,10 @@ def server_health_check() -> str:
                 lines.append(f"⚠️  **MWAA API** — token request failed: {exc}")
         lines.append("")
 
-    # ── EMR Serverless ──
+    # ── EMR Serverless (test default env) ──
+    default_profile = get_aws_profile()
     try:
-        session = boto3.Session(region_name=AWS_REGION, profile_name=AWS_PROFILE)
+        session = boto3.Session(region_name=AWS_REGION, profile_name=default_profile)
         emr = session.client("emr-serverless")
         resp = emr.list_applications(maxResults=1)
         app_count = len(resp.get("applications", []))
@@ -98,17 +101,34 @@ def server_health_check() -> str:
         lines.append(f"❌ **EMR Serverless** — {exc}")
     lines.append("")
 
-    # ── S3 Log Bucket ──
-    try:
-        session = boto3.Session(region_name=AWS_REGION, profile_name=AWS_PROFILE)
-        s3 = session.client("s3")
+    # ── S3 Log Buckets (per environment) ──
+    if EMR_LOG_BUCKETS:
+        lines.append("**S3 Log Buckets (per environment):**")
         prefix = EMR_LOG_PREFIX.strip("/") + "/"
-        resp = s3.list_objects_v2(Bucket=EMR_LOG_BUCKET, Prefix=prefix, MaxKeys=1)
-        found = resp.get("KeyCount", 0)
-        lines.append(f"✅ **S3 Log Bucket** — `{EMR_LOG_BUCKET}` accessible")
-        lines.append(f"   Prefix  : {prefix} ({found} object(s) found)")
+        for env_tag, bucket_name in sorted(EMR_LOG_BUCKETS.items()):
+            profile = get_aws_profile(env_tag)
+            try:
+                session = boto3.Session(region_name=AWS_REGION, profile_name=profile)
+                s3 = session.client("s3")
+                resp = s3.list_objects_v2(Bucket=bucket_name, Prefix=prefix, MaxKeys=1)
+                found = resp.get("KeyCount", 0)
+                lines.append(f"  ✅ **{env_tag.upper()}** — `{bucket_name}` ({found} object(s))")
+            except Exception as exc:
+                short_err = str(exc)[:80]
+                lines.append(f"  ❌ **{env_tag.upper()}** — `{bucket_name}`: {short_err}")
+    else:
+        lines.append("❌ **S3 Log Buckets** — none configured")
+    lines.append("")
+
+    # ── S3 General Access (test default env) ──
+    try:
+        session = boto3.Session(region_name=AWS_REGION, profile_name=default_profile)
+        s3_general = session.client("s3")
+        bucket_resp = s3_general.list_buckets()
+        bucket_count = len(bucket_resp.get("Buckets", []))
+        lines.append(f"✅ **S3 General** — {bucket_count} bucket(s) accessible in default account")
     except Exception as exc:
-        lines.append(f"❌ **S3 Log Bucket** — `{EMR_LOG_BUCKET}`: {exc}")
+        lines.append(f"❌ **S3 General** — list_buckets failed: {exc}")
     lines.append("")
 
     # ── Confluence ──

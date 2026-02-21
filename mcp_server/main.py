@@ -1,11 +1,14 @@
 """
-MCP Server — Ops Tools for MWAA, EMR Serverless, Confluence & Azure DevOps.
+MCP Server — Ops Tools for MWAA, EMR Serverless, S3, Confluence & Azure DevOps.
 
-Single server exposing tools across five domains:
+Single server exposing tools across six domains:
   • Airflow (via MWAA)   — DAG listing, run details, task logs, triggering,
-                           pause/unpause, task retry, historical runs, DAG source
+                           pause/unpause, task retry, historical runs, DAG source,
+                           run statistics with trends and analytics
   • EMR Serverless       — app listing, job runs, Spark driver S3 logs, S3 browsing,
                            job cancellation, general S3 file reading, cost summary
+  • S3 (General)         — bucket listing, interactive folder/file browsing,
+                           object metadata inspection (any bucket in the account)
   • Confluence           — search, page content, child pages, attachments, labels,
                            comments, page creation, page updates
   • Azure DevOps (TFS)   — Git repos, file browsing, sprints, work items, backlog
@@ -25,14 +28,14 @@ mcp = FastMCP(
     "ops-tools",
     instructions=(
         "This server provides operations tools for AWS MWAA (Airflow), "
-        "EMR Serverless, Confluence, Azure DevOps (TFS), and utility functions."
+        "EMR Serverless, S3, Confluence, Azure DevOps (TFS), and utility functions."
         "\n\n"
         "DOCUMENTATION: When the user says 'documentation', 'docs', 'runbook', "
         "or 'wiki', ALWAYS use Confluence tools. search_confluence to find, "
         "get_page_content to read. Do NOT ask 'where should I look?' — Confluence is the default."
         "\n\n"
         "INTERACTIVE OUTPUT: When the user asks about runs, logs, or processing "
-        "for a specific DAG/process but doesn't specify which run — call get_dag_runs "
+        "for a specific DAG/process but doesn't specify which run — call get_dag_run_history "
         "to get a numbered list and present it so the user can pick one. "
         "Do NOT ask multiple follow-up questions. Give the list in ONE shot. "
         "Example: 'I found 10 runs for HEM processing. Which one? 1. ✅ Feb 19 SUCCESS, "
@@ -48,9 +51,16 @@ mcp = FastMCP(
         "It shows EVERY DAG with last run state, pause status, and schedule in one view. "
         "Use list_dags() only when the user specifically wants just DAG names/schedules."
         "\n\n"
+        "DAG STATS & TRENDS: When the user asks 'how has this DAG been running?', "
+        "'is it stable?', 'show me stats', 'success rate', or 'run statistics' — use "
+        "get_dag_run_stats(dag_id='...', days=14). It provides success/failure rates, "
+        "duration stats (avg/min/max), trend direction, failure patterns (e.g. 'fails on Mondays'), "
+        "and a visual streak of recent runs. Use get_dag_run_history() for a flat list of individual runs; "
+        "use get_dag_run_stats() for analytics and trends."
+        "\n\n"
         "DEBUGGING WORKFLOW: For quick diagnosis, use diagnose_dag_failure(dag_id='...') "
         "which does everything automatically. For manual step-by-step: "
-        "(1) get_dag_runs → find the failed run, "
+        "(1) get_dag_run_history → find the failed run, "
         "(2) get_dag_run_details → find which task failed, "
         "(3) get_task_log on 'initialise' task → get EMR application ID (pattern: '00g...'), "
         "(4) get_task_log on failed processing task → get job_run_id, "
@@ -60,9 +70,17 @@ mcp = FastMCP(
         "DAG LIFECYCLE: Use pause_dag/unpause_dag to control scheduling. "
         "Use clear_task_instance to retry a failed task without re-triggering the whole DAG."
         "\n\n"
-        "S3 FILES: Use read_s3_file(s3_uri='s3://bucket/key') to read any S3 file."
+        "S3 BROWSING: For general S3 questions (buckets, folders, files in any bucket), "
+        "use list_s3_buckets() to see all buckets, browse_s3(bucket='...') to navigate "
+        "folders and files interactively, get_s3_object_info(s3_uri='...') for file metadata. "
+        "Use read_s3_file(s3_uri='...') to read file contents. "
+        "For EMR Spark log navigation specifically, use browse_s3_logs and read_spark_driver_log."
         "\n\n"
-        "All MWAA tools accept 'env': 'dev', 'test', or 'prod' (default: dev)."
+        "ENVIRONMENT SELECTION: All AWS tools (MWAA, EMR, S3) accept 'env': 'dev', 'uat', 'test', or 'prod'. "
+        "Each env is a DIFFERENT AWS account with its own profile, MWAA, EMR, and S3 buckets. "
+        "IMPORTANT: When the user asks about DAGs, runs, logs, S3, or EMR without specifying "
+        "which environment — ASK them which env (dev/uat/test/prod) BEFORE calling any tool. "
+        "Do NOT default silently. Example: 'Which environment? dev, uat, test, or prod?'"
         "\n\n"
         "AZURE DEVOPS: When the user asks about repos, source code, sprints, "
         "work items, PBIs, tasks, bugs, backlogs, or iterations — use Azure DevOps tools. "
@@ -80,7 +98,7 @@ from mcp_server.tools.utility_tools import (          # noqa: E402
 )
 from mcp_server.tools.mwaa_tools import (             # noqa: E402
     list_dags,
-    get_dag_runs,
+    get_dag_run_history,
     get_dag_run_details,
     get_task_log,
     trigger_dag,
@@ -89,6 +107,7 @@ from mcp_server.tools.mwaa_tools import (             # noqa: E402
     clear_task_instance,
     get_dag_source,
     get_dag_status_report,
+    get_dag_run_stats,
 )
 from mcp_server.tools.emr_tools import (              # noqa: E402
     list_emr_applications,
@@ -99,6 +118,11 @@ from mcp_server.tools.emr_tools import (              # noqa: E402
     cancel_job_run,
     read_s3_file,
     get_emr_cost_summary,
+)
+from mcp_server.tools.s3_tools import (               # noqa: E402
+    list_s3_buckets,
+    browse_s3,
+    get_s3_object_info,
 )
 from mcp_server.tools.confluence_tools import (       # noqa: E402
     search_confluence,
@@ -128,10 +152,10 @@ from mcp_server.tools.orchestration_tools import (    # noqa: E402
 
 mcp.tool()(server_health_check)
 
-# ── Register MWAA tools (10) ────────────────────────────────────────────────
+# ── Register MWAA tools (11) ────────────────────────────────────────────────
 
 mcp.tool()(list_dags)
-mcp.tool()(get_dag_runs)
+mcp.tool()(get_dag_run_history)
 mcp.tool()(get_dag_run_details)
 mcp.tool()(get_task_log)
 mcp.tool()(trigger_dag)
@@ -140,6 +164,7 @@ mcp.tool()(unpause_dag)
 mcp.tool()(clear_task_instance)
 mcp.tool()(get_dag_source)
 mcp.tool()(get_dag_status_report)
+mcp.tool()(get_dag_run_stats)
 
 # ── Register EMR Serverless tools (8) ────────────────────────────────────────
 
@@ -151,6 +176,12 @@ mcp.tool()(browse_s3_logs)
 mcp.tool()(cancel_job_run)
 mcp.tool()(read_s3_file)
 mcp.tool()(get_emr_cost_summary)
+
+# ── Register S3 tools (3) ────────────────────────────────────────────────────
+
+mcp.tool()(list_s3_buckets)
+mcp.tool()(browse_s3)
+mcp.tool()(get_s3_object_info)
 
 # ── Register Confluence tools (9) ────────────────────────────────────────────
 
@@ -181,8 +212,35 @@ mcp.tool()(diagnose_dag_failure)
 
 # ── Entry point ──────────────────────────────────────────────────────────────
 
+def _log_config_warnings() -> None:
+    """Print configuration warnings to stderr at startup (doesn't block server)."""
+    import sys
+    from mcp_server.config import (
+        AWS_PROFILES, MWAA_ENVIRONMENTS, EMR_LOG_BUCKETS,
+        CONFLUENCE_PAT, AZDO_PAT,
+    )
+
+    warnings = []
+    if not AWS_PROFILES:
+        warnings.append("No AWS profiles configured — AWS tools will not work")
+    if not MWAA_ENVIRONMENTS:
+        warnings.append("No MWAA environments configured — Airflow tools will not work")
+    if not EMR_LOG_BUCKETS:
+        warnings.append("No EMR log buckets configured — Spark log tools will not work")
+    if not CONFLUENCE_PAT:
+        warnings.append("CONFLUENCE_PAT not set — Confluence tools will not work")
+    if not AZDO_PAT:
+        warnings.append("AZDO_PAT not set — Azure DevOps tools will not work")
+
+    if warnings:
+        print("[ops-tools] Config warnings:", file=sys.stderr)
+        for w in warnings:
+            print(f"  - {w}", file=sys.stderr)
+
+
 def main():
     """Run the MCP server via stdio transport."""
+    _log_config_warnings()
     mcp.run(transport="stdio")
 
 
