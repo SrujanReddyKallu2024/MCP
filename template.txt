@@ -1,0 +1,84 @@
+Local Experian MCP Server with PyPI Package
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-10-17/server.schema.json",
+  "name": "local.experian/mcp-confluence-local",
+  "description": "MCP server for Experian Confluence with stdio and HTTP transport support for AI agents.",
+  "status": "active",
+  "repository": {
+    "url": "https://code.experian.local/projects/CBAI/repos/mcp-confluence",
+    "source": "experian-bitbucket"
+  },
+  "version": "0.1.0",
+  "packages": [
+    {
+      "registryType": "pypi",
+      "registryBaseUrl": "https://artifacts.experian.local/artifactory/api/pypi/pypi",
+      "identifier": "mcp-confluence",
+      "version": "0.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "CONFLUENCE_MCP_TRANSPORT",
+          "description": "Confluence MCP Transport Protocol (stdio or http)",
+          "value": "stdio"
+        },
+        {
+          "name": "CONFLUENCE_URL",
+          "description": "Confluence Server URL",
+          "value": "https://pages.experian.local"
+        },
+        {
+          "name": "CONFLUENCE_TOKEN",
+          "description": "Confluence API Token to access the server",
+          "value": "${input:confluence_token}",
+          "isSecret": true,
+          "isRequired": true
+        }
+      ]
+    }
+  ],
+  "_meta": {
+    "io.modelcontextprotocol.registry/publisher-provided": {
+      "tool": "experian-publisher",
+      "version": "1.0.0",
+      "build_info": {
+        "timestamp": "2025-01-15T00:00:00Z"
+      }
+    },
+    "com.experian": {
+      "labels": ["confluence", "documentation"],
+      "owner": {
+        "userId": "C12345E",
+        "name": "Nathan Hadzariga",
+        "email": "nathan.mhadzariga@experian.com"
+      },
+      "collaborators": [],
+      "tags": {
+        "appId": "",
+        "arbId": "",
+        "psaId": "",
+        "businessUnit": "FSD",
+        "region": "Global",
+        "team": "CoreBureauProducts"
+      },
+      "documentationLinks": [
+        "https://code.experian.local/projects/CBAI/repos/mcp-confluence/browse/README.md"
+      ]
+    }
+  }
+}
+
+Authentication Headers
+Experian servers commonly use Bearer token authentication with ${input:access_token} for user-provided tokens.
+
+Experian Registry URLs
+Artifactory PyPI: https://artifacts.experian.local/artifactory/api/pypi/pypi
+Bitbucket: https://code.experian.local
+Confluence: https://pages.experian.local
+Transport Types
+Remote servers: Use streamable-http transport
+Local packages: Use stdio transport
+
+https://artifacts.experian.local/artifactory/pypi/ops-mcp-server/
