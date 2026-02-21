@@ -31,17 +31,14 @@ from mcp_server.config import AWS_REGION, get_aws_profile, get_emr_log_bucket, E
 from mcp_server.tools._aws_helpers import get_s3_client, fmt_duration, fmt_size
 
 
-# ── Boto3 client caches (keyed by resolved profile name) ────────────────────
-
-_emr_clients: dict[str, Any] = {}
+# ── Boto3 client creation (fresh per call) ──────────────────────────────────
 
 
 def _get_emr(env: str | None = None):
+    """Return a fresh boto3 EMR Serverless client for the given environment."""
     profile = get_aws_profile(env) or "default"
-    if profile not in _emr_clients:
-        session = boto3.Session(region_name=AWS_REGION, profile_name=profile)
-        _emr_clients[profile] = session.client("emr-serverless")
-    return _emr_clients[profile]
+    session = boto3.Session(region_name=AWS_REGION, profile_name=profile)
+    return session.client("emr-serverless")
 
 
 # Use shared S3 client from _aws_helpers
@@ -116,7 +113,8 @@ def list_emr_applications(states: str | None = None, env: str | None = None) -> 
 
     Args:
         states: Optional comma-separated state filter (e.g. 'STARTED,CREATED').
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns a formatted list of applications with IDs, types and states.
     """
@@ -168,7 +166,8 @@ def list_job_runs(
         max_results: Max runs to return (default 30).
         states: Optional comma-separated state filter (e.g. 'SUCCESS,FAILED').
         created_after: Optional ISO date — only runs after this date (e.g. '2026-02-16').
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns a list of job runs with status, timing and duration.
     """
@@ -223,7 +222,8 @@ def get_job_run_details(application_id: str, job_run_id: str, env: str | None = 
     Args:
         application_id: The EMR Serverless application ID (from Airflow 'initialise' task log).
         job_run_id: The job run ID (from Airflow processing task log).
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns comprehensive details: state, config, resource usage, S3 log paths.
     """
@@ -523,7 +523,8 @@ def browse_s3_logs(
                 Use the output to navigate deeper, e.g. 'spark-logs/ttdgeo_metadata_SE/'.
         bucket: S3 bucket (default from config).
         max_items: Max items to show (default 50).
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns a directory listing of the S3 prefix showing folders and files.
     """
@@ -599,7 +600,8 @@ def cancel_job_run(application_id: str, job_run_id: str, env: str | None = None)
     Args:
         application_id: The EMR Serverless application ID.
         job_run_id: The job run ID to cancel.
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns confirmation of the cancellation request.
     """
@@ -639,7 +641,8 @@ def read_s3_file(
         s3_uri: Full S3 URI (e.g. 's3://bucket-name/path/to/file.csv').
         tail_lines: Number of lines from the end to return (default 100). Set to -1 for all.
         search_text: Optional text to filter matching lines.
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns the file contents, optionally filtered and tailed.
     """
@@ -691,7 +694,8 @@ def get_emr_cost_summary(
     Args:
         application_id: Optional — filter to one application. If omitted, scans all.
         days: Number of days to look back (default 7).
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns a cost summary with per-job and total resource usage.
     """

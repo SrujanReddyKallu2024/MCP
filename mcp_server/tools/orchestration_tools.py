@@ -50,7 +50,8 @@ def diagnose_dag_failure(
 
     Args:
         dag_id: The DAG to diagnose (e.g. 'ttdcustom_processing').
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
         date: Optional date to check (ISO format or 'yesterday'). Default: today.
 
     Returns a comprehensive failure report with root cause analysis.

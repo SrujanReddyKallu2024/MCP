@@ -15,18 +15,14 @@ import boto3
 from mcp_server.config import AWS_REGION, get_aws_profile
 
 
-# ── Shared boto3 S3 client cache ────────────────────────────────────────────
-
-_s3_clients: dict[str, Any] = {}
+# ── Shared boto3 S3 client (fresh per call) ─────────────────────────────────
 
 
 def get_s3_client(env: str | None = None):
-    """Return a cached boto3 S3 client for the given environment."""
+    """Return a fresh boto3 S3 client for the given environment."""
     profile = get_aws_profile(env) or "default"
-    if profile not in _s3_clients:
-        session = boto3.Session(region_name=AWS_REGION, profile_name=profile)
-        _s3_clients[profile] = session.client("s3")
-    return _s3_clients[profile]
+    session = boto3.Session(region_name=AWS_REGION, profile_name=profile)
+    return session.client("s3")
 
 
 # ── Shared formatting helpers ───────────────────────────────────────────────

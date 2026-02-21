@@ -216,7 +216,8 @@ def list_dags(
     List all DAGs in the MWAA environment.
 
     Args:
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
         limit: Maximum number of DAGs to return (default 100).
         only_active: If True, show only unpaused DAGs.
 
@@ -265,7 +266,8 @@ def get_dag_run_history(
     so the user can pick a specific run for deeper investigation.
 
     Args:
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
         dag_id: Optional — filter to a specific DAG. If omitted, shows ALL DAGs.
         date: 'today' (default), 'yesterday', 'last_week', or ISO date (e.g. '2026-02-15').
         limit: Max runs to return (default 50).
@@ -368,7 +370,8 @@ def get_dag_run_details(
     Args:
         dag_id: The DAG identifier.
         dag_run_id: The run ID (e.g. 'scheduled__2026-02-16T00:00:00+00:00' or 'manual__...').
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns formatted output showing each task with state, duration and try count.
     """
@@ -458,7 +461,8 @@ def get_task_log(
         dag_id: The DAG identifier.
         dag_run_id: The run ID.
         task_id: The task identifier.
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
         try_number: Which attempt (default 1).
         tail_lines: Number of lines to return from the end (default 200).
 
@@ -502,7 +506,8 @@ def trigger_dag(
 
     Args:
         dag_id: The DAG to trigger.
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
         conf: Optional JSON string of DAG run configuration.
 
     Returns confirmation with the new run ID.
@@ -533,7 +538,8 @@ def pause_dag(dag_id: str, env: str | None = None) -> str:
 
     Args:
         dag_id: The DAG to pause.
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns confirmation of the pause action.
     """
@@ -553,7 +559,8 @@ def unpause_dag(dag_id: str, env: str | None = None) -> str:
 
     Args:
         dag_id: The DAG to unpause.
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns confirmation of the unpause action.
     """
@@ -585,7 +592,8 @@ def clear_task_instance(
         dag_id: The DAG identifier.
         dag_run_id: The run ID.
         task_id: The task to clear/retry.
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
         include_downstream: If True, also clear all downstream tasks (default: False).
 
     Returns confirmation with the list of cleared task instances.
@@ -633,7 +641,8 @@ def get_dag_source(dag_id: str, env: str | None = None) -> str:
 
     Args:
         dag_id: The DAG identifier.
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns the DAG details including file location, schedule, tags, and task list.
     """
@@ -731,7 +740,8 @@ def get_dag_status_report(
       - Failed DAGs highlighted at the bottom with diagnosis commands
 
     Args:
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
         limit: Maximum number of DAGs to return (default 100).
 
     Returns a formatted status report with every DAG and its current health.
@@ -843,7 +853,8 @@ def get_dag_run_stats(
 
     Args:
         dag_id: The DAG identifier to analyse.
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
         days: Number of days to look back (default: 14, max: 90).
 
     Returns a formatted analytics report with trends and patterns.

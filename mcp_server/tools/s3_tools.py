@@ -52,8 +52,8 @@ def list_s3_buckets(env: str | None = None) -> str:
     "what buckets do we have", or anything about S3 at account level.
 
     Args:
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
-             Each env is a different AWS account with different buckets.
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns every bucket with its creation date, sorted alphabetically.
     """
@@ -114,8 +114,8 @@ def browse_s3(
         prefix: S3 prefix/path to browse (default: root of bucket).
                 Example: 'raw/hem_processing/' to see that folder.
         max_results: Max items to show (default 200).
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
-             Each env is a different AWS account with different buckets.
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns a directory listing showing folders and files with sizes
     and last modified times.
@@ -212,8 +212,8 @@ def get_s3_object_info(s3_uri: str, env: str | None = None) -> str:
 
     Args:
         s3_uri: Full S3 URI (e.g. 's3://bucket-name/path/to/file.csv').
-        env: Which environment — 'dev', 'uat', 'test', or 'prod' (default: dev).
-             Each env is a different AWS account with different buckets.
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
     Returns file metadata: size, last modified, content type, storage
     class, encryption, and ETag.
