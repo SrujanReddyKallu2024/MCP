@@ -1,0 +1,77 @@
+get me l;ast digital taxonomy s3 logs 
+Refining Approach to Files
+
+
+I am now focusing on refining my method for handling files. I'm exploring an approach that avoids specific commands when creating or modifying files, opting for a streamlined process. I'm prioritizing efficient file operations.
+
+
+Analyzing Job Run History
+
+
+I'm now shifting gears to analyze job run history to pinpoint the relevant logs. I'm leveraging a tool to examine the history of digital_taxonomy_processing jobs, starting in the dev environment. Once I find the appropriate run, I can investigate its job details and associated S3 logs. I'm aiming for the most recent successful run, avoiding a cancelled job that might not have the right logs.
+
+
+Retrieving Last Digital Taxonomy S3 Logs
+Extracted the app ID and job ID from the Airflow task logs (same run we cancelled).
+
+Progress Updates
+2
+Fetching the DAG run history for yesterday since there were no runs today
+
+MCP Tool:
+ops-tools / get_dag_run_history
+
+
+Refining Analysis Approach
+
+
+My analysis is evolving. I'm streamlining the way I approach the data, prioritizing efficiency. Recent tweaks focus on optimizing the steps to extract the key insights. The goal is to get to the main points more quickly.
+
+
+3
+Getting DAG run details to find the specific EMR job ID for extracting driver logs
+
+MCP Tool:
+ops-tools / get_dag_run_details
+Analyzed
+
+
+
+
+4
+Parsing the task logs to find the EMR application and job IDs for the failed task Run_F15_Processing
+
+MCP Tool:
+ops-tools / get_task_log
+Analyzed
+
+
+
+
+MCP Tool:
+ops-tools / get_task_log
+
+
+
+
+5
+Viewing the run_f15_processing task logs to identify the job run ID and retrieve the Spark driver logs
+
+Analyzed
+
+
+
+
+6
+Pulling the Spark driver logs for the identified EMR job run ID and passing them back to the user
+
+MCP Tool:
+ops-tools / read_spark_driver_log
+Pulling the Spark driver logs for the identified EMR job run ID and passing them back to the user get it
+
+
+
+
+MCP Tool:
+ops-tools / read_spark_driver_log
+Working
