@@ -23,7 +23,7 @@ The environment is the **ConsumerSync** team at Experian, running marketplace da
 | Tool | Purpose | Key Args |
 |------|---------|----------|
 | `list_dags` | List all DAGs with schedule & pause status | `env`, `limit`, `only_active` |
-| `get_dag_run_history` | DAG runs for today/yesterday/date with pass/fail | `env`, `dag_id`, `date`, `limit` |
+| `list_dag_runs` | DAG runs for today/yesterday/date with pass/fail | `env`, `dag_id`, `date`, `limit` |
 | `get_dag_run_details` | Full task-level breakdown of one run | `dag_id`, `dag_run_id`, `env` |
 | `get_task_log` | Read Airflow log for a single task attempt | `dag_id`, `dag_run_id`, `task_id`, `env`, `try_number`, `tail_lines` |
 | `trigger_dag` | Manually trigger a DAG | `dag_id`, `env`, `conf` (JSON string) |
@@ -31,8 +31,8 @@ The environment is the **ConsumerSync** team at Experian, running marketplace da
 | `unpause_dag` | Unpause a DAG to resume scheduling | `dag_id`, `env` |
 | `clear_task_instance` | Retry a failed task without re-triggering the DAG | `dag_id`, `dag_run_id`, `task_id`, `env`, `include_downstream` |
 | `get_dag_source` | Get DAG source code, tasks, and metadata | `dag_id`, `env` |
-| `get_dag_status_report` | Full dashboard of ALL DAGs with last run status | `env`, `limit` |
-| `get_dag_run_stats` | Run statistics with trends, success rate, duration stats, failure patterns | `dag_id`, `env`, `days` |
+| `get_dags_status_dashboard` | Full dashboard of ALL DAGs with last run status | `env`, `limit` |
+| `dag_analytics` | Run statistics with trends, success rate, duration stats, failure patterns | `dag_id`, `env`, `days` |
 
 ### EMR Serverless Tools (8 tools)
 
@@ -118,7 +118,7 @@ The environment is the **ConsumerSync** team at Experian, running marketplace da
 
 **Manual (step by step):**
 ```
-Step 1: get_dag_run_history(dag_id='...', env='dev')
+Step 1: list_dag_runs(dag_id='...', env='dev')
         → Find the failed run
 
 Step 2: get_dag_run_details(dag_id='...', dag_run_id='...', env='dev')
@@ -137,14 +137,14 @@ Step 5: read_spark_driver_log(application_id='...', job_run_id='...', env='dev')
 
 ### DAG Status Overview
 
-Use `get_dag_status_report(env='dev')` to see ALL DAGs with their last run state, pause status, and schedule in one view. Failed DAGs get highlighted with `diagnose_dag_failure()` hints.
+Use `get_dags_status_dashboard(env='dev')` to see ALL DAGs with their last run state, pause status, and schedule in one view. Failed DAGs get highlighted with `diagnose_dag_failure()` hints.
 
 ### DAG Run Stats & Trends
 
-Use `get_dag_run_stats(dag_id='...', days=14)` when the user asks about reliability, statistics, trends, or patterns. It provides analytics that `get_dag_run_history` does NOT:
+Use `dag_analytics(dag_id='...', days=14)` when the user asks about reliability, statistics, trends, or patterns. It provides analytics that `list_dag_runs` does NOT:
 
 ```
-get_dag_run_stats(dag_id='digital_taxonomy_processing', env='dev', days=14)
+dag_analytics(dag_id='digital_taxonomy_processing', env='dev', days=14)
 → Overview: 14 runs, 11 success (78.6%), 3 failed (21.4%)
 → Duration: avg 42m, min 38m, max 1h 12m
 → Trend: 📈 Increasing (+15% — recent avg 45m vs older avg 39m)
@@ -154,9 +154,9 @@ get_dag_run_stats(dag_id='digital_taxonomy_processing', env='dev', days=14)
 ```
 
 **When to use which:**
-- `get_dag_run_history` — flat list of individual runs (pick one to investigate)
-- `get_dag_run_stats` — aggregated statistics, trends, patterns (assess health)
-- `get_dag_status_report` — ALL DAGs at a glance (last run only per DAG)
+- `list_dag_runs` — flat list of individual runs (pick one to investigate)
+- `dag_analytics` — aggregated statistics, trends, patterns (assess health)
+- `get_dags_status_dashboard` — ALL DAGs at a glance (last run only per DAG)
 
 ---
 

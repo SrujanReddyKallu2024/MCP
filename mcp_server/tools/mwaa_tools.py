@@ -7,7 +7,7 @@ directly via the MWAA web server endpoint.  This works for both public and
 
 Tools:
   • list_dags            — list all DAGs with schedule & pause status
-  • get_dag_run_history         — DAG runs for today/yesterday/date with pass/fail
+  • list_dag_runs         — DAG runs for today/yesterday/date with pass/fail
   • get_dag_run_details  — full task-level breakdown for one DAG run
   • get_task_log         — read the Airflow log of a single task attempt
   • trigger_dag          — manually trigger a DAG run
@@ -15,8 +15,8 @@ Tools:
   • unpause_dag          — unpause a DAG to resume scheduling
   • clear_task_instance  — retry a failed task without re-triggering the DAG
   • get_dag_source       — get DAG source code, tasks, and metadata
-  • get_dag_status_report — full dashboard of ALL DAGs with last run status
-  • get_dag_run_stats   — run statistics with trends, success rate, duration stats
+  • get_dags_status_dashboard — full dashboard of ALL DAGs with last run status
+  • dag_analytics   — run statistics with trends, success rate, duration stats
 """
 
 from __future__ import annotations
@@ -252,7 +252,7 @@ def list_dags(
     return "\n".join(lines)
 
 
-def get_dag_run_history(
+def list_dag_runs(
     env: str | None = None,
     dag_id: str | None = None,
     date: str = "today",
@@ -718,7 +718,7 @@ def get_dag_source(dag_id: str, env: str | None = None) -> str:
     return "\n".join(lines)
 
 
-def get_dag_status_report(
+def get_dags_status_dashboard(
     env: str | None = None,
     limit: int = 100,
 ) -> str:
@@ -832,7 +832,7 @@ def get_dag_status_report(
     return "\n".join(lines)
 
 
-def get_dag_run_stats(
+def dag_analytics(
     dag_id: str,
     env: str | None = None,
     days: int = 14,
@@ -844,7 +844,7 @@ def get_dag_run_stats(
     statistics, or historical patterns — "how's digital taxonomy been running?",
     "is this DAG stable?", "show me stats for HEM processing".
 
-    Unlike get_dag_run_history (flat list of individual runs), this tool provides:
+    Unlike list_dag_runs (flat list of individual runs), this tool provides:
       - Success rate and failure rate over the time period
       - Duration stats: average, min, max, and trend direction
       - Failure pattern detection (e.g. "fails on Mondays")
@@ -1045,9 +1045,9 @@ def get_dag_run_stats(
     # ── Hints ──
     lines.append("")
     if failed_count > 0:
-        lines.append(f"💡 To investigate failures: `get_dag_run_history(dag_id='{dag_id}', date='last_week', env='{env or 'dev'}')`")
+        lines.append(f"💡 To investigate failures: `list_dag_runs(dag_id='{dag_id}', date='last_week', env='{env or 'dev'}')`")
         lines.append(f"💡 Quick diagnosis: `diagnose_dag_failure(dag_id='{dag_id}', env='{env or 'dev'}')`")
     else:
-        lines.append(f"💡 For individual run details: `get_dag_run_history(dag_id='{dag_id}', date='last_week', env='{env or 'dev'}')`")
+        lines.append(f"💡 For individual run details: `list_dag_runs(dag_id='{dag_id}', date='last_week', env='{env or 'dev'}')`")
 
     return "\n".join(lines)

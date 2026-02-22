@@ -40,7 +40,7 @@ Say something like:
 **What you say:**
 > "Show me the status of all DAGs in prod"
 
-**What happens:** The AI calls `get_dag_status_report(env='prod')` and gives you a full dashboard:
+**What happens:** The AI calls `get_dags_status_dashboard(env='prod')` and gives you a full dashboard:
 - How many DAGs are active vs paused
 - Which ones failed today
 - Which ones are currently running
@@ -52,7 +52,7 @@ Say something like:
 **Follow up with:**
 > "How has ttdcustom_processing been running lately?"
 
-**What happens:** The AI calls `get_dag_run_stats(dag_id='ttdcustom_processing', env='prod', days=14)` and shows you:
+**What happens:** The AI calls `dag_analytics(dag_id='ttdcustom_processing', env='prod', days=14)` and shows you:
 - Success rate (e.g. 92.3%)
 - Average/min/max run duration
 - Whether it's getting faster or slower (trend)

@@ -437,8 +437,8 @@ def read_spark_driver_log(
 
     # ── Path 3: S3 prefix scan — list process folders, try GetObject (~2-5s) ──
     # Lists process_name folders under spark-logs/ (1 cheap call), then tries
-    # GetObject for each folder. NoSuchKey returns instantly (no timeout penalty),
-    # so this is fast even with ~20-50 folders.
+    # GetObject for each. NoSuchKey returns instantly (~50ms, no timeout),
+    # so this is fast even with 20-50 folders.
     s3 = _get_s3(env)
     scan_prefix = f"{EMR_LOG_PREFIX.strip('/')}/"
     try:

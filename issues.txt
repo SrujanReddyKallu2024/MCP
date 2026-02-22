@@ -19,7 +19,7 @@ Progress Updates
 Fetching the DAG run history for yesterday since there were no runs today
 
 MCP Tool:
-ops-tools / get_dag_run_history
+ops-tools / list_dag_runs
 
 
 Refining Analysis Approach

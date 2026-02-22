@@ -35,7 +35,7 @@ mcp = FastMCP(
         "get_page_content to read. Do NOT ask 'where should I look?' — Confluence is the default."
         "\n\n"
         "INTERACTIVE OUTPUT: When the user asks about runs, logs, or processing "
-        "for a specific DAG/process but doesn't specify which run — call get_dag_run_history "
+        "for a specific DAG/process but doesn't specify which run — call list_dag_runs "
         "to get a numbered list and present it so the user can pick one. "
         "Do NOT ask multiple follow-up questions. Give the list in ONE shot. "
         "Example: 'I found 10 runs for HEM processing. Which one? 1. ✅ Feb 19 SUCCESS, "
@@ -47,20 +47,20 @@ mcp = FastMCP(
         "Only use log_type='stderr' when specifically investigating Spark framework issues."
         "\n\n"
         "DAG STATUS: When the user asks for a status report, dashboard, overview, "
-        "'which DAGs failed', or 'what's running' — use get_dag_status_report(). "
+        "'which DAGs failed', or 'what's running' — use get_dags_status_dashboard(). "
         "It shows EVERY DAG with last run state, pause status, and schedule in one view. "
         "Use list_dags() only when the user specifically wants just DAG names/schedules."
         "\n\n"
         "DAG STATS & TRENDS: When the user asks 'how has this DAG been running?', "
         "'is it stable?', 'show me stats', 'success rate', or 'run statistics' — use "
-        "get_dag_run_stats(dag_id='...', days=14). It provides success/failure rates, "
+        "dag_analytics(dag_id='...', days=14). It provides success/failure rates, "
         "duration stats (avg/min/max), trend direction, failure patterns (e.g. 'fails on Mondays'), "
-        "and a visual streak of recent runs. Use get_dag_run_history() for a flat list of individual runs; "
-        "use get_dag_run_stats() for analytics and trends."
+        "and a visual streak of recent runs. Use list_dag_runs() for a flat list of individual runs; "
+        "use dag_analytics() for analytics and trends."
         "\n\n"
         "DEBUGGING WORKFLOW: For quick diagnosis, use diagnose_dag_failure(dag_id='...') "
         "which does everything automatically. For manual step-by-step: "
-        "(1) get_dag_run_history → find the failed run, "
+        "(1) list_dag_runs → find the failed run, "
         "(2) get_dag_run_details → find which task failed, "
         "(3) get_task_log on 'initialise' task → get EMR application ID (pattern: '00g...'), "
         "(4) get_task_log on failed processing task → get job_run_id AND the S3 log path, "
@@ -106,7 +106,7 @@ from mcp_server.tools.utility_tools import (          # noqa: E402
 )
 from mcp_server.tools.mwaa_tools import (             # noqa: E402
     list_dags,
-    get_dag_run_history,
+    list_dag_runs,
     get_dag_run_details,
     get_task_log,
     trigger_dag,
@@ -114,8 +114,8 @@ from mcp_server.tools.mwaa_tools import (             # noqa: E402
     unpause_dag,
     clear_task_instance,
     get_dag_source,
-    get_dag_status_report,
-    get_dag_run_stats,
+    get_dags_status_dashboard,
+    dag_analytics,
 )
 from mcp_server.tools.emr_tools import (              # noqa: E402
     list_emr_applications,
@@ -163,7 +163,7 @@ mcp.tool()(server_health_check)
 # ── Register MWAA tools (11) ────────────────────────────────────────────────
 
 mcp.tool()(list_dags)
-mcp.tool()(get_dag_run_history)
+mcp.tool()(list_dag_runs)
 mcp.tool()(get_dag_run_details)
 mcp.tool()(get_task_log)
 mcp.tool()(trigger_dag)
@@ -171,8 +171,8 @@ mcp.tool()(pause_dag)
 mcp.tool()(unpause_dag)
 mcp.tool()(clear_task_instance)
 mcp.tool()(get_dag_source)
-mcp.tool()(get_dag_status_report)
-mcp.tool()(get_dag_run_stats)
+mcp.tool()(get_dags_status_dashboard)
+mcp.tool()(dag_analytics)
 
 # ── Register EMR Serverless tools (8) ────────────────────────────────────────
 

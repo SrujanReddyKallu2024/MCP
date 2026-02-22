@@ -122,7 +122,7 @@ Everything you need to monitor, debug, and manage your DAGs.
 | Tool | What It Does |
 |------|-------------|
 | `list_dags` | Lists all DAGs with their schedule and pause status |
-| `get_dag_run_history` | Shows runs for today/yesterday/any date — numbered list so you can pick one |
+| `list_dag_runs` | Shows runs for today/yesterday/any date — numbered list so you can pick one |
 | `get_dag_run_details` | Full task-level breakdown for a specific run — which tasks passed, which failed |
 | `get_task_log` | Reads the Airflow log for a specific task attempt — the raw log output |
 | `trigger_dag` | Manually kicks off a DAG run (with optional config) |
@@ -130,8 +130,8 @@ Everything you need to monitor, debug, and manage your DAGs.
 | `unpause_dag` | Unpauses a DAG so scheduled runs resume |
 | `clear_task_instance` | Retries a failed task without re-running the entire DAG |
 | `get_dag_source` | Shows the DAG's Python source code, tasks, operators, and dependencies |
-| `get_dag_status_report` | Full dashboard of ALL DAGs — states, schedules, failures, everything at a glance |
-| `get_dag_run_stats` | Analytics: success rate, duration trends, failure patterns, visual streaks |
+| `get_dags_status_dashboard` | Full dashboard of ALL DAGs — states, schedules, failures, everything at a glance |
+| `dag_analytics` | Analytics: success rate, duration trends, failure patterns, visual streaks |
 
 **Common things you'd say:**
 - "Show me all DAGs in dev"
