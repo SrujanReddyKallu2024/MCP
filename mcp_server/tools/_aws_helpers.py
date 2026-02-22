@@ -11,8 +11,18 @@ from datetime import datetime, timezone
 from typing import Any
 
 import boto3
+from botocore.config import Config
 
 from mcp_server.config import AWS_REGION, get_aws_profile
+
+
+# ── Boto3 config with timeouts (prevents infinite hangs) ────────────────────
+
+_BOTO_CONFIG = Config(
+    connect_timeout=10,
+    read_timeout=30,
+    retries={"max_attempts": 2, "mode": "standard"},
+)
 
 
 # ── Shared boto3 S3 client (fresh per call) ─────────────────────────────────
@@ -22,7 +32,7 @@ def get_s3_client(env: str | None = None):
     """Return a fresh boto3 S3 client for the given environment."""
     profile = get_aws_profile(env) or "default"
     session = boto3.Session(region_name=AWS_REGION, profile_name=profile)
-    return session.client("s3")
+    return session.client("s3", config=_BOTO_CONFIG)
 
 
 # ── Shared formatting helpers ───────────────────────────────────────────────

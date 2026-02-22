@@ -15,7 +15,6 @@ import re
 from typing import Any
 
 from mcp_server.tools.mwaa_tools import (
-    get_dag_run_history,
     get_dag_run_details,
     get_task_log,
     _airflow_api,
@@ -60,9 +59,8 @@ def diagnose_dag_failure(
 
     # ── Step 1: Find the failed run ──
     target_date = date or "today"
-    runs_output = get_dag_run_history(dag_id=dag_id, env=env, date=target_date, limit=10)
 
-    # Parse runs to find a failed one by querying the API directly
+    # Query the API directly for structured data
     from datetime import datetime, timezone, timedelta
 
     if date and date.lower() == "yesterday":
@@ -201,20 +199,33 @@ def diagnose_dag_failure(
                 lines.append("")
                 break
 
-    # ── Step 4b: Extract process_name from task logs for faster S3 log discovery ──
+    # ── Step 4b: Extract S3 log base URI from task logs ──
+    # The Airflow task log contains the full S3 path for the logs — extract it
+    # so we can pass it directly to read_spark_driver_log (avoids any scanning).
+    s3_log_base = None
     process_name = None
     all_log_text = "\n".join(lines)
-    pname_patterns = [
-        r"spark-logs/([A-Za-z0-9_-]+)/applications/",
-        r"logUri['\"]?\s*[:=]\s*['\"]?s3://[^/]+/spark-logs/([^/\"'\s]+)",
+
+    # Try to extract full S3 URI first (most reliable)
+    uri_patterns = [
+        r"(s3://[^\s\"']+/spark-logs/[A-Za-z0-9_-]+)",
+        r"logUri['\"]?\s*[:=]\s*['\"]?(s3://[^\s\"']+)",
     ]
-    for pat in pname_patterns:
+    for pat in uri_patterns:
         m = re.search(pat, all_log_text)
         if m:
-            # Use first non-None group (pattern 1 has group 1, pattern 2 has group 1 or 2)
-            candidate = m.group(1) if m.group(1) else (m.group(2) if m.lastindex >= 2 else None)
-            if candidate and candidate != "applications":
-                process_name = candidate
+            s3_log_base = m.group(1).rstrip("/")
+            break
+
+    # Fallback: extract just the process_name
+    if not s3_log_base:
+        pname_patterns = [
+            r"spark-logs/([A-Za-z0-9_-]+)/applications/",
+        ]
+        for pat in pname_patterns:
+            m = re.search(pat, all_log_text)
+            if m and m.group(1) != "applications":
+                process_name = m.group(1)
                 break
 
     # ── Step 5: Read Spark driver logs ──
@@ -229,9 +240,18 @@ def diagnose_dag_failure(
 
         if emr_job_id:
             lines.append(f"🔗 **EMR Job Run ID:** `{emr_job_id}`")
-            if process_name:
+            if s3_log_base:
+                lines.append(f"🔗 **S3 Log Base:** `{s3_log_base}`")
+            elif process_name:
                 lines.append(f"🔗 **Process Name:** `{process_name}`")
             lines.append("")
+
+            # Build the direct S3 URI if we have the base path from the task log
+            stdout_uri = None
+            stderr_uri = None
+            if s3_log_base:
+                stdout_uri = f"{s3_log_base}/applications/{emr_app_id}/jobs/{emr_job_id}/SPARK_DRIVER/stdout.gz"
+                stderr_uri = f"{s3_log_base}/applications/{emr_app_id}/jobs/{emr_job_id}/SPARK_DRIVER/stderr.gz"
 
             # Read stdout (Python app output)
             lines.append("─── Spark Driver STDOUT (Python output) ───")
@@ -239,6 +259,7 @@ def diagnose_dag_failure(
                 application_id=emr_app_id,
                 job_run_id=emr_job_id,
                 log_type="stdout",
+                s3_log_uri=stdout_uri,
                 tail_lines=100,
                 process_name=process_name,
                 env=env,
@@ -252,6 +273,7 @@ def diagnose_dag_failure(
                 application_id=emr_app_id,
                 job_run_id=emr_job_id,
                 log_type="stderr",
+                s3_log_uri=stderr_uri,
                 tail_lines=50,
                 search_text="ERROR",
                 process_name=process_name,

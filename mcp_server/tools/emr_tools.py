@@ -26,9 +26,19 @@ from datetime import datetime, timezone
 from typing import Any
 
 import boto3
+from botocore.config import Config
 
 from mcp_server.config import AWS_REGION, get_aws_profile, get_emr_log_bucket, EMR_LOG_PREFIX, validate_env, aws_env_header
 from mcp_server.tools._aws_helpers import get_s3_client, fmt_duration, fmt_size
+
+
+# ── Boto3 config with timeouts (prevents infinite hangs) ────────────────────
+
+_BOTO_CONFIG = Config(
+    connect_timeout=10,
+    read_timeout=30,
+    retries={"max_attempts": 2, "mode": "standard"},
+)
 
 
 # ── Boto3 client creation (fresh per call) ──────────────────────────────────
@@ -38,7 +48,7 @@ def _get_emr(env: str | None = None):
     """Return a fresh boto3 EMR Serverless client for the given environment."""
     profile = get_aws_profile(env) or "default"
     session = boto3.Session(region_name=AWS_REGION, profile_name=profile)
-    return session.client("emr-serverless")
+    return session.client("emr-serverless", config=_BOTO_CONFIG)
 
 
 # Use shared S3 client from _aws_helpers
@@ -352,6 +362,7 @@ def read_spark_driver_log(
             application_id=application_id,
             job_run_id=job_run_id,
             log_type="stdout",
+            s3_log_uri=s3_log_uri,
             process_name=process_name,
             tail_lines=tail_lines,
             search_text=search_text,
@@ -362,6 +373,7 @@ def read_spark_driver_log(
             application_id=application_id,
             job_run_id=job_run_id,
             log_type="stderr",
+            s3_log_uri=s3_log_uri.replace("stdout", "stderr") if s3_log_uri and "stdout" in s3_log_uri else s3_log_uri,
             process_name=process_name,
             tail_lines=min(tail_lines, 100),
             search_text="ERROR",
@@ -375,11 +387,9 @@ def read_spark_driver_log(
             + stderr_result
         )
 
-    s3 = _get_s3(env)
     log_bucket = bucket or get_emr_log_bucket(env)
-    prefix = EMR_LOG_PREFIX.strip("/")
 
-    # If full URI given, read directly
+    # ── Path 1: Full S3 URI given → read directly (fastest) ──
     if s3_log_uri:
         b, k = _parse_s3_uri(s3_log_uri)
         content = _read_s3_object(b, k, env=env)
@@ -387,46 +397,53 @@ def read_spark_driver_log(
             return f"❌ Could not read: {s3_log_uri}"
         return _format_log_output(content, f"s3://{b}/{k}", log_type, tail_lines, search_text)
 
-    # Build candidate paths based on actual structure:
-    # spark-logs/{process_name}/applications/{app_id}/jobs/{job_id}/SPARK_DRIVER/{log}.gz
-    candidates: list[str] = []
+    # ── Path 2: Ask EMR API for exact log location ──
+    log_uri = None
+    emr_api_failed = False
+    try:
+        emr_client = _get_emr(env)
+        job_resp = emr_client.get_job_run(applicationId=application_id, jobRunId=job_run_id)
+        job_run = job_resp.get("jobRun", {})
+        log_uri = job_run.get("monitoringConfiguration", {}).get(
+            "s3MonitoringConfiguration", {}
+        ).get("logUri", "")
+    except Exception:
+        emr_api_failed = True
 
+    if log_uri:
+        base = log_uri.rstrip("/")
+        for suffix in [f"{log_type}.gz", log_type]:
+            uri = f"{base}/applications/{application_id}/jobs/{job_run_id}/SPARK_DRIVER/{suffix}"
+            b, k = _parse_s3_uri(uri)
+            content = _read_s3_object(b, k, env=env)
+            if content is not None:
+                return _format_log_output(content, uri, log_type, tail_lines, search_text)
+
+    # ── Path 3: process_name given → build direct path ──
     if process_name:
-        # With explicit process name
-        candidates.extend([
-            f"{prefix}/{process_name}/applications/{application_id}/jobs/{job_run_id}/SPARK_DRIVER/{log_type}.gz",
-            f"{prefix}/{process_name}/applications/{application_id}/jobs/{job_run_id}/SPARK_DRIVER/{log_type}",
-        ])
-    else:
-        # Try to find by listing the process names
-        try:
-            list_resp = s3.list_objects_v2(
-                Bucket=log_bucket,
-                Prefix=f"{prefix}/",
-                Delimiter="/",
-            )
-            common_prefixes = [p["Prefix"] for p in list_resp.get("CommonPrefixes", [])]
-            for cp in common_prefixes:
-                # Each cp is like "spark-logs/ttdgeo_metadata_SE/"
-                candidates.append(f"{cp}applications/{application_id}/jobs/{job_run_id}/SPARK_DRIVER/{log_type}.gz")
-                candidates.append(f"{cp}applications/{application_id}/jobs/{job_run_id}/SPARK_DRIVER/{log_type}")
-        except Exception:
-            pass
+        prefix = EMR_LOG_PREFIX.strip("/")
+        for suffix in [f"{log_type}.gz", log_type]:
+            key = f"{prefix}/{process_name}/applications/{application_id}/jobs/{job_run_id}/SPARK_DRIVER/{suffix}"
+            content = _read_s3_object(log_bucket, key, env=env)
+            if content is not None:
+                return _format_log_output(content, f"s3://{log_bucket}/{key}", log_type, tail_lines, search_text)
 
-    # Also try without process_name (flat structure)
-    candidates.extend([
-        f"{prefix}/applications/{application_id}/jobs/{job_run_id}/SPARK_DRIVER/{log_type}.gz",
-        f"{prefix}/applications/{application_id}/jobs/{job_run_id}/SPARK_DRIVER/{log_type}",
-    ])
-
-    # Try each candidate
-    for key in candidates:
-        content = _read_s3_object(log_bucket, key, env=env)
-        if content is not None:
-            return _format_log_output(content, f"s3://{log_bucket}/{key}", log_type, tail_lines, search_text)
-
-    # Not found — try listing to help the user
-    return _find_log_suggestions(log_bucket, prefix, application_id, job_run_id, log_type, env=env)
+    # ── Nothing worked — clear error with guidance ──
+    error_lines: list[str] = []
+    if emr_api_failed:
+        error_lines.append(f"⚠️ EMR application `{application_id}` not found (app may have been deleted).")
+        error_lines.append("")
+    error_lines.append(f"❌ Could not find Spark driver `{log_type}` log.")
+    error_lines.append("")
+    error_lines.append("The log file should be at a path like:")
+    error_lines.append(f"   `s3://{{bucket}}/spark-logs/{{process_name}}/applications/{application_id}/jobs/{job_run_id}/SPARK_DRIVER/{log_type}.gz`")
+    error_lines.append("")
+    error_lines.append("**How to fix:**")
+    error_lines.append("1. Read the Airflow task log for this job — it contains the S3 log path")
+    error_lines.append("2. Look for a line like: `spark-logs/<process_name>/applications/...`")
+    error_lines.append(f"3. Then call: `read_spark_driver_log(application_id='{application_id}', job_run_id='{job_run_id}', s3_log_uri='s3://bucket/full/path/{log_type}.gz')`")
+    error_lines.append(f"   Or: `read_spark_driver_log(application_id='{application_id}', job_run_id='{job_run_id}', process_name='<name from log>')`")
+    return "\n".join(error_lines)
 
 
 def _format_log_output(
@@ -453,60 +470,6 @@ def _format_log_output(
 
     header += f"   Source: {source}\n"
     return header + "\n".join(lines)
-
-
-def _find_log_suggestions(
-    bucket: str,
-    prefix: str,
-    app_id: str,
-    job_id: str,
-    log_type: str,
-    env: str | None = None,
-) -> str:
-    """When log not found, list available files to help the user."""
-    s3 = _get_s3(env)
-    lines = [f"❌ Spark driver `{log_type}` log not found.\n"]
-
-    # Try listing under app_id
-    search_patterns = [
-        f"{prefix}/",
-    ]
-
-    for search_prefix in search_patterns:
-        try:
-            paginator = s3.get_paginator("list_objects_v2")
-            found_any = False
-            for resp in paginator.paginate(Bucket=bucket, Prefix=search_prefix, Delimiter="/"):
-                for cp in resp.get("CommonPrefixes", []):
-                    subdir = cp["Prefix"]
-                    # Check if this subdir has our app_id somewhere inside
-                    try:
-                        sub_check = s3.list_objects_v2(
-                            Bucket=bucket,
-                            Prefix=f"{subdir}applications/{app_id}/",
-                            MaxKeys=5,
-                        )
-                        if sub_check.get("Contents"):
-                            found_any = True
-                            files = [c["Key"] for c in sub_check["Contents"]]
-                            lines.append(f"📂 Found logs under: `{subdir}`")
-                            for f in files:
-                                lines.append(f"   • `{f}`")
-                            process = subdir.replace(f"{prefix}/", "").strip("/")
-                            lines.append(
-                                f"   💡 Try: `read_spark_driver_log(application_id='{app_id}', "
-                                f"job_run_id='{job_id}', process_name='{process}')`"
-                            )
-                            lines.append("")
-                    except Exception:
-                        pass
-            if found_any:
-                return "\n".join(lines)
-        except Exception as exc:
-            lines.append(f"   ⚠️  Could not list bucket: {exc}")
-
-    lines.append(f"💡 Use `browse_s3_logs()` to explore the log structure in `s3://{bucket}/{prefix}/`")
-    return "\n".join(lines)
 
 
 def browse_s3_logs(
