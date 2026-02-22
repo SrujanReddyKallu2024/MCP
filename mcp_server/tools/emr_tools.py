@@ -418,6 +418,11 @@ def read_spark_driver_log(
 
     log_bucket = bucket or get_emr_log_bucket(env)
 
+    # ── Timing (debug — remove after diagnosis) ──
+    import time as _t
+    _timings: list[str] = []
+    _t0 = _t.time()
+
     # ── Path 1: Full S3 URI given → read directly (fastest) ──
     if s3_log_uri:
         b, k = _parse_s3_uri(s3_log_uri)
@@ -431,12 +436,15 @@ def read_spark_driver_log(
     emr_api_failed = False
     try:
         emr_client = _get_emr(env)
+        _timings.append(f"_get_emr: {_t.time()-_t0:.1f}s")
         job_resp = emr_client.get_job_run(applicationId=application_id, jobRunId=job_run_id)
+        _timings.append(f"get_job_run: {_t.time()-_t0:.1f}s")
         job_run = job_resp.get("jobRun", {})
         log_uri = job_run.get("monitoringConfiguration", {}).get(
             "s3MonitoringConfiguration", {}
         ).get("logUri", "")
     except Exception as exc:
+        _timings.append(f"EMR API error ({type(exc).__name__}): {_t.time()-_t0:.1f}s")
         # Retry once on credential errors
         if _error_code(exc) in CREDENTIAL_ERROR_CODES:
             _clear_emr(env)
@@ -447,10 +455,13 @@ def read_spark_driver_log(
                 log_uri = job_run.get("monitoringConfiguration", {}).get(
                     "s3MonitoringConfiguration", {}
                 ).get("logUri", "")
+                _timings.append(f"EMR retry OK: {_t.time()-_t0:.1f}s")
             except Exception:
                 emr_api_failed = True
         else:
             emr_api_failed = True
+
+    _timings.append(f"log_uri={'found' if log_uri else 'missing'}: {_t.time()-_t0:.1f}s")
 
     if log_uri:
         base = log_uri.rstrip("/")
@@ -458,8 +469,10 @@ def read_spark_driver_log(
             uri = f"{base}/applications/{application_id}/jobs/{job_run_id}/SPARK_DRIVER/{suffix}"
             b, k = _parse_s3_uri(uri)
             content = _read_s3_object(b, k, env=env)
+            _timings.append(f"S3 read {suffix}: {_t.time()-_t0:.1f}s ({'hit' if content else 'miss'})")
             if content is not None:
-                return _format_log_output(content, uri, log_type, tail_lines, search_text)
+                result = _format_log_output(content, uri, log_type, tail_lines, search_text)
+                return result + f"\n\n⏱️ Timing: {' → '.join(_timings)}"
 
     # ── Path 3: process_name given → build direct path ──
     if process_name:
