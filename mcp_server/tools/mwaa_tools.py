@@ -855,11 +855,11 @@ def get_dag_run_stats(
         dag_id: The DAG identifier to analyse.
         env: Target environment — 'dev', 'uat', 'test', or 'prod'.
              IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
-        days: Number of days to look back (default: 14, max: 90).
+        days: Number of days to look back (default: 14, max: 180).
 
     Returns a formatted analytics report with trends and patterns.
     """
-    days = max(1, min(days, 90))
+    days = max(1, min(days, 180))
 
     now = datetime.now(timezone.utc)
     start_dt = (now - timedelta(days=days)).replace(hour=0, minute=0, second=0, microsecond=0)

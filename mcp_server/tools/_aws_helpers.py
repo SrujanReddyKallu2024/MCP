@@ -25,14 +25,36 @@ _BOTO_CONFIG = Config(
 )
 
 
-# ── Shared boto3 S3 client (fresh per call) ─────────────────────────────────
+# ── Credential error codes that indicate expired/invalid SSO tokens ──────────
+
+CREDENTIAL_ERROR_CODES = frozenset({
+    "ExpiredToken", "ExpiredTokenException",
+    "InvalidToken", "AccessDenied", "AccessDeniedException",
+    "UnrecognizedClientException", "InvalidIdentityToken",
+})
+
+
+# ── Shared boto3 S3 client (cached per env, auto-retry on expired creds) ────
+
+_s3_cache: dict[str, object] = {}
 
 
 def get_s3_client(env: str | None = None):
-    """Return a fresh boto3 S3 client for the given environment."""
+    """Return a cached boto3 S3 client for the given environment."""
+    key = (env or "default").lower()
+    if key in _s3_cache:
+        return _s3_cache[key]
     profile = get_aws_profile(env) or "default"
     session = boto3.Session(region_name=AWS_REGION, profile_name=profile)
-    return session.client("s3", config=_BOTO_CONFIG)
+    client = session.client("s3", config=_BOTO_CONFIG)
+    _s3_cache[key] = client
+    return client
+
+
+def clear_s3_client(env: str | None = None):
+    """Clear cached S3 client for an env (call after credential refresh)."""
+    key = (env or "default").lower()
+    _s3_cache.pop(key, None)
 
 
 # ── Shared formatting helpers ───────────────────────────────────────────────

@@ -29,7 +29,7 @@ import boto3
 from botocore.config import Config
 
 from mcp_server.config import AWS_REGION, get_aws_profile, get_emr_log_bucket, EMR_LOG_PREFIX, validate_env, aws_env_header
-from mcp_server.tools._aws_helpers import get_s3_client, fmt_duration, fmt_size
+from mcp_server.tools._aws_helpers import get_s3_client, clear_s3_client, fmt_duration, fmt_size, CREDENTIAL_ERROR_CODES
 
 
 # ── Boto3 config with timeouts (prevents infinite hangs) ────────────────────
@@ -41,18 +41,32 @@ _BOTO_CONFIG = Config(
 )
 
 
-# ── Boto3 client creation (fresh per call) ──────────────────────────────────
+# ── Boto3 client creation (cached per env, auto-retry on expired creds) ─────
+
+_emr_cache: dict[str, object] = {}
 
 
 def _get_emr(env: str | None = None):
-    """Return a fresh boto3 EMR Serverless client for the given environment."""
+    """Return a cached boto3 EMR Serverless client for the given environment."""
+    key = (env or "default").lower()
+    if key in _emr_cache:
+        return _emr_cache[key]
     profile = get_aws_profile(env) or "default"
     session = boto3.Session(region_name=AWS_REGION, profile_name=profile)
-    return session.client("emr-serverless", config=_BOTO_CONFIG)
+    client = session.client("emr-serverless", config=_BOTO_CONFIG)
+    _emr_cache[key] = client
+    return client
+
+
+def _clear_emr(env: str | None = None):
+    """Clear cached EMR client for an env (call after credential refresh)."""
+    key = (env or "default").lower()
+    _emr_cache.pop(key, None)
 
 
 # Use shared S3 client from _aws_helpers
 _get_s3 = get_s3_client
+_clear_s3 = clear_s3_client
 
 
 # ── Formatting helpers ───────────────────────────────────────────────────────
@@ -80,6 +94,14 @@ def _emoji(state: str | None) -> str:
 _fmt_duration = fmt_duration
 
 
+def _error_code(exc: Exception) -> str:
+    """Extract AWS error code from a botocore exception, or empty string."""
+    resp = getattr(exc, 'response', None)
+    if isinstance(resp, dict):
+        return resp.get('Error', {}).get('Code', '')
+    return ''
+
+
 def _parse_s3_uri(uri: str) -> tuple[str, str]:
     """Split 's3://bucket/key' into (bucket, key)."""
     path = uri.replace("s3://", "")
@@ -87,8 +109,9 @@ def _parse_s3_uri(uri: str) -> tuple[str, str]:
     return bucket, key
 
 
-def _read_s3_object(bucket: str, key: str, env: str | None = None) -> str | None:
-    """Read an S3 object, auto-decompress gzip, return text or None."""
+def _read_s3_object(bucket: str, key: str, env: str | None = None, _retried: bool = False) -> str | None:
+    """Read an S3 object, auto-decompress gzip, return text or None.
+    Auto-retries once on expired credentials (clears cached client)."""
     s3 = _get_s3(env)
     try:
         obj = s3.get_object(Bucket=bucket, Key=key)
@@ -100,7 +123,13 @@ def _read_s3_object(bucket: str, key: str, env: str | None = None) -> str | None
             except Exception:
                 pass
         return raw.decode("utf-8", errors="replace")
-    except Exception:
+    except s3.exceptions.NoSuchKey:
+        return None
+    except Exception as exc:
+        # On credential errors, clear cache and retry once
+        if not _retried and _error_code(exc) in CREDENTIAL_ERROR_CODES:
+            _clear_s3(env)
+            return _read_s3_object(bucket, key, env=env, _retried=True)
         return None
 
 
@@ -407,8 +436,21 @@ def read_spark_driver_log(
         log_uri = job_run.get("monitoringConfiguration", {}).get(
             "s3MonitoringConfiguration", {}
         ).get("logUri", "")
-    except Exception:
-        emr_api_failed = True
+    except Exception as exc:
+        # Retry once on credential errors
+        if _error_code(exc) in CREDENTIAL_ERROR_CODES:
+            _clear_emr(env)
+            try:
+                emr_client = _get_emr(env)
+                job_resp = emr_client.get_job_run(applicationId=application_id, jobRunId=job_run_id)
+                job_run = job_resp.get("jobRun", {})
+                log_uri = job_run.get("monitoringConfiguration", {}).get(
+                    "s3MonitoringConfiguration", {}
+                ).get("logUri", "")
+            except Exception:
+                emr_api_failed = True
+        else:
+            emr_api_failed = True
 
     if log_uri:
         base = log_uri.rstrip("/")
