@@ -1,0 +1,19 @@
+Output
+═══ STDOUT (Python App Output — primary log) ═══ ❌ Could not find Spark driver stdout log.
+
+The log file should be at a path like: s3://eec-aws-uk-ms-consumersync-dev-logs-bucket/spark-logs/{process_name}/applications/00g3k4qmas8ai90t/jobs/00g3k4ttb9k6t80v/SPARK_DRIVER/stdout.gz
+
+How to fix:
+
+Read the Airflow task log for this job — it contains the S3 log path
+Look for a line like: spark-logs/<process_name>/applications/...
+Then call: read_spark_driver_log(application_id='00g3k4qmas8ai90t', job_run_id='00g3k4ttb9k6t80v', s3_log_uri='s3://bucket/full/path/stdout.gz') Or: read_spark_driver_log(application_id='00g3k4qmas8ai90t', job_run_id='00g3k4ttb9k6t80v', process_name='<name from log>')
+═══ STDERR (Spark Framework — errors only) ═══ ❌ Could not find Spark driver stderr log.
+
+The log file should be at a path like: s3://eec-aws-uk-ms-consumersync-dev-logs-bucket/spark-logs/{process_name}/applications/00g3k4qmas8ai90t/jobs/00g3k4ttb9k6t80v/SPARK_DRIVER/stderr.gz
+
+How to fix:
+
+Read the Airflow task log for this job — it contains the S3 log path
+Look for a line like: spark-logs/<process_name>/applications/...
+Then call: read_spark_driver_log(application_id='00g3k4qmas8ai90t', job_run_id='00g3k4ttb9k6t80v', s3_log_uri='s3://bucket/full/path/stderr.gz') Or: read_spark_driver_log(application_id='00g3k4qmas8ai90t', job_run_id='00g3k4ttb9k6t80v', process_name='<name from log>')
