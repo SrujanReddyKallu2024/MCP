@@ -6,13 +6,14 @@ with a Personal Access Token (Basic auth).  Provides repository browsing,
 sprint tracking, work item queries, and backlog management.
 
 Tools:
-  * list_repos            -- list all Git repos in the project
-  * browse_repo           -- browse files/folders in a repo
-  * read_repo_file        -- read a file's content from a repo
-  * get_current_sprint    -- get the active sprint with dates and summary
-  * get_sprint_work_items -- get all PBIs + Tasks in a sprint
-  * get_work_item_details -- get full details of a specific work item
-  * get_backlog           -- get backlog items not in current sprint
+  * list_repos              -- list all Git repos in the project
+  * browse_repo             -- browse files/folders in a repo (one level)
+  * browse_repo_recursive   -- full recursive file tree of a repo
+  * read_repo_file          -- read a file's content from a repo
+  * get_current_sprint      -- get the active sprint with dates and summary
+  * get_sprint_work_items   -- get all PBIs + Tasks in a sprint
+  * get_work_item_details   -- get full details of a specific work item
+  * get_backlog             -- get backlog items not in current sprint
 """
 
 from __future__ import annotations
@@ -317,6 +318,96 @@ def browse_repo(
             lines.append(f"  \U0001f4c4 {file_name}")
             lines.append(f"     \u2192 `read_repo_file(repo_name='{repo_name}', path='{file_path}')`")
         lines.append("")
+
+    return "\n".join(lines)
+
+
+def browse_repo_recursive(
+    repo_name: str,
+    path: str = "/",
+    branch: str | None = None,
+    extension_filter: str | None = None,
+    project: str | None = None,
+) -> str:
+    """
+    List ALL files in a Git repository recursively — the full file tree.
+
+    USE THIS TOOL when the user asks 'what files are in this repo?',
+    'show me the whole repo structure', 'list all Python files', or needs
+    to find correct file paths before reading. Much faster than calling
+    browse_repo folder-by-folder.
+
+    Args:
+        repo_name: Repository name (from list_repos).
+        path: Starting folder path (default '/' for entire repo).
+        branch: Branch name (default: repo's default branch).
+        extension_filter: Filter by file extension, e.g. '.py', '.json', '.yaml'.
+                          Case-insensitive. Only files matching this extension are shown.
+        project: Project name (default from config).
+
+    Returns a tree of ALL files and folders with full paths.
+    Use read_repo_file(repo_name='...', path='...') to read any file.
+    """
+    url = f"{_project_url(project)}/_apis/git/repositories/{repo_name}/items"
+    params: dict[str, str] = {
+        "scopePath": path,
+        "recursionLevel": "full",
+    }
+    if branch:
+        params["versionDescriptor.version"] = branch
+        params["versionDescriptor.versionType"] = "branch"
+
+    data = _api_get(url, params=params)
+
+    if isinstance(data, dict) and "error" in data:
+        return data["error"]
+
+    items = data.get("value", []) if isinstance(data, dict) else []
+    if not items:
+        return f"No items found at path '{path}' in repo '{repo_name}'."
+
+    # Separate folders and files
+    folders = []
+    files = []
+    for item in items:
+        item_path = item.get("path", "?")
+        if item.get("isFolder", False):
+            folders.append(item_path)
+        else:
+            files.append(item_path)
+
+    # Apply extension filter
+    if extension_filter:
+        ext = extension_filter.lower() if extension_filter.startswith(".") else f".{extension_filter.lower()}"
+        files = [f for f in files if f.lower().endswith(ext)]
+
+    # Build tree output
+    lines = [
+        f"\U0001f333 **{repo_name}** \u2014 full file tree from `{path}`",
+        f"   {len(folders)} folder(s), {len(files)} file(s)",
+        "",
+    ]
+
+    if not files and not folders:
+        lines.append("(empty)")
+        return "\n".join(lines)
+
+    # Group files by top-level folder for readability
+    tree: dict[str, list[str]] = {}
+    for f in sorted(files):
+        # Get the directory part
+        parts = f.rsplit("/", 1)
+        folder = parts[0] if len(parts) > 1 and parts[0] else "/"
+        tree.setdefault(folder, []).append(f)
+
+    for folder in sorted(tree.keys()):
+        lines.append(f"\U0001f4c1 **{folder}/**")
+        for file_path in tree[folder]:
+            file_name = file_path.rsplit("/", 1)[-1]
+            lines.append(f"   \U0001f4c4 {file_name}  \u2192  `{file_path}`")
+        lines.append("")
+
+    lines.append(f"\U0001f4a1 Use `read_repo_file(repo_name='{repo_name}', path='<path>')` to read any file.")
 
     return "\n".join(lines)
 

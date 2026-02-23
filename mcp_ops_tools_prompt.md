@@ -2,7 +2,7 @@
 
 ## What This MCP Server Does
 
-You have access to an **ops-tools** MCP server with **40 tools** across six domains:
+You have access to an **ops-tools** MCP server with **43 tools** across six domains:
 - **AWS MWAA (Airflow)** — DAG listing, runs, task logs, triggering, pause/unpause, retry, status dashboard, run history & trends
 - **AWS EMR Serverless** — Spark applications, job runs, driver logs from S3, cost summary
 - **S3 (General)** — List buckets, browse any bucket/folder interactively, file metadata inspection
@@ -34,7 +34,7 @@ The environment is the **ConsumerSync** team at Experian, running marketplace da
 | `get_dags_status_dashboard` | Full dashboard of ALL DAGs with last run status | `env`, `limit` |
 | `dag_analytics` | Run statistics with trends, success rate, duration stats, failure patterns | `dag_id`, `env`, `days` |
 
-### EMR Serverless Tools (8 tools)
+### EMR Serverless Tools (9 tools)
 
 | Tool | Purpose | Key Args |
 |------|---------|----------|
@@ -44,10 +44,11 @@ The environment is the **ConsumerSync** team at Experian, running marketplace da
 | `read_spark_driver_log` | Read Spark driver stdout/stderr from S3 | `env`, `application_id`, `job_run_id`, `log_type`, `tail_lines`, `search_text`, `read_both` |
 | `browse_s3_logs` | Navigate S3 log directory structure | `env`, `prefix`, `bucket` |
 | `cancel_job_run` | Cancel a running or pending job | `env`, `application_id`, `job_run_id` |
-| `read_s3_file` | Read any file from S3 by URI | `env`, `s3_uri`, `tail_lines`, `search_text` |
+| `stop_emr_application` | Stop an EMR app — auto-cancels running jobs if needed | `env`, `application_id`, `force` |
+| `read_s3_file` | Read any S3 file (CSV, TXT, JSON, Parquet — 5 MB limit) | `env`, `s3_uri`, `tail_lines`, `search_text`, `head_rows` |
 | `get_emr_cost_summary` | Resource usage and cost summary across jobs | `env`, `application_id`, `days` |
 
-### S3 Tools (3 tools)
+### S3 Tools (4 tools)
 
 > **Note:** S3 tools accept `env` to switch between AWS accounts. Each env (dev/uat/test/prod) is a different AWS account with different buckets. For EMR Spark log navigation specifically, use `browse_s3_logs` and `read_spark_driver_log` from the EMR tools above.
 
@@ -55,6 +56,7 @@ The environment is the **ConsumerSync** team at Experian, running marketplace da
 |------|---------|----------|
 | `list_s3_buckets` | List all S3 buckets in the AWS account | `env` |
 | `browse_s3` | Browse folders and files in any bucket interactively | `env`, `bucket`, `prefix`, `max_results` |
+| `list_s3_recursive` | Recursively list ALL files end-to-end with name/extension filters and size summary | `env`, `bucket`, `prefix`, `name_filter`, `extension_filter`, `max_results` |
 | `get_s3_object_info` | Get file metadata without downloading (size, modified, type) | `env`, `s3_uri` |
 
 ### Confluence Tools (9 tools)
@@ -71,14 +73,15 @@ The environment is the **ConsumerSync** team at Experian, running marketplace da
 | `create_confluence_page` | Create a new page | `title`, `body`, `space_key`, `parent_page_id` |
 | `update_confluence_page` | Update an existing page | `page_id`, `body`, `title`, `append` |
 
-### Azure DevOps / TFS Tools (7 tools)
+### Azure DevOps / TFS Tools (8 tools)
 
 > **Note:** These tools require `AZDO_PAT` to be set. The server starts without it — the tools will prompt for the PAT when first used.
 
 | Tool | Purpose | Key Args |
 |------|---------|----------|
 | `list_repos` | List all Git repos in the project | `project` |
-| `browse_repo` | Browse files/folders in a repo (directory listing) | `repo_name`, `path`, `branch`, `project` |
+| `browse_repo` | Browse files/folders in a repo (one level at a time) | `repo_name`, `path`, `branch`, `project` |
+| `browse_repo_recursive` | Full recursive file tree — all files with correct paths in one call | `repo_name`, `path`, `branch`, `extension_filter`, `project` |
 | `read_repo_file` | Read a file's content from a repo | `repo_name`, `path`, `branch`, `project` |
 | `get_current_sprint` | Get active sprint with dates and days remaining | `project`, `team` |
 | `get_sprint_work_items` | All PBIs + Tasks + Bugs in a sprint with details | `iteration_path`, `project`, `team` |
@@ -158,6 +161,21 @@ dag_analytics(dag_id='digital_taxonomy_processing', env='dev', days=14)
 - `dag_analytics` — aggregated statistics, trends, patterns (assess health)
 - `get_dags_status_dashboard` — ALL DAGs at a glance (last run only per DAG)
 
+### EMR Application Management
+
+```
+stop_emr_application(application_id='00gXXX', env='dev')
+→ Gracefully stops the EMR app
+
+stop_emr_application(application_id='00gXXX', env='dev', force=True)
+→ Force-stop: auto-cancels ALL running/pending jobs first, then stops the app
+```
+
+**When to use:** The `finalise` task in each DAG normally stops and deletes the EMR app. Use `stop_emr_application` when:
+- A DAG failed before reaching `finalise` and the app is still running (costing money)
+- You need to manually shut down an app that's stuck
+- Use `force=True` when jobs are still running — it cancels them all first
+
 ---
 
 ## Azure DevOps Workflow
@@ -165,10 +183,16 @@ dag_analytics(dag_id='digital_taxonomy_processing', env='dev', days=14)
 ### Browse Source Code
 ```
 list_repos()                                    → See all repos
-browse_repo(repo_name='my-repo')                → See root directory
-browse_repo(repo_name='my-repo', path='/src')   → Navigate deeper
-read_repo_file(repo_name='my-repo', path='/src/main.py')  → Read file
+browse_repo_recursive(repo_name='my-repo')      → See ENTIRE repo file tree in one call
+browse_repo_recursive(repo_name='my-repo', extension_filter='.py')  → Only Python files
+browse_repo(repo_name='my-repo', path='/src')   → Browse one folder at a time
+read_repo_file(repo_name='my-repo', path='/src/main.py')  → Read file content
 ```
+
+**When to use which:**
+- `browse_repo_recursive` — use when the user asks "what files are in this repo?", "show me the structure", or needs to find correct paths. Returns the full tree with every file path.
+- `browse_repo` — use for navigating one folder at a time when you already know which folder to look in.
+- `read_repo_file` — use to read a file's content once you have the correct path from either browse tool.
 
 ### Sprint Board
 ```
@@ -180,17 +204,25 @@ get_backlog()                → Items not in current sprint
 
 ---
 
-## S3 Browsing Workflow
+## S3 Browsing & File Reading Workflow
 
 ```
 list_s3_buckets(env='dev')                                        → See all buckets in dev account
 list_s3_buckets(env='prod')                                       → See all buckets in prod account
 browse_s3(bucket='my-data-bucket', env='dev')                     → Top-level folders
 browse_s3(bucket='my-data-bucket', prefix='raw/', env='dev')      → Navigate deeper
-browse_s3(bucket='my-data-bucket', prefix='raw/hem/', env='dev')  → See files with sizes & dates
+list_s3_recursive(bucket='my-data-bucket', env='dev')              → ALL files end-to-end recursively
+list_s3_recursive(bucket='my-data-bucket', prefix='raw/', extension_filter='.csv', env='dev')  → Only CSVs under raw/
 get_s3_object_info(s3_uri='s3://my-data-bucket/raw/hem/output.parquet', env='dev')  → File metadata
-read_s3_file(s3_uri='s3://my-data-bucket/raw/hem/output.parquet', env='dev')        → Read file contents
+read_s3_file(s3_uri='s3://my-data-bucket/raw/hem/output.parquet', env='dev')        → Read parquet (shows schema + first 50 rows)
+read_s3_file(s3_uri='s3://my-data-bucket/raw/data.csv', env='dev')                  → Read CSV/TXT/JSON as text
+read_s3_file(s3_uri='s3://my-data-bucket/logs/app.log.gz', env='dev', search_text='ERROR')  → Search in gzipped log
 ```
+
+**`read_s3_file` format support:**
+- **Parquet** (`.parquet`, `.parquet.gz`) — displays column schema and first N rows as a table (`head_rows` controls row count, default 50)
+- **Text** (`.csv`, `.txt`, `.json`, `.log`, `.gz`) — displays as text with optional `tail_lines` and `search_text` filtering
+- **5 MB limit** — files larger than 5 MB are rejected with a size message (use `get_s3_object_info` to check size first)
 
 ---
 

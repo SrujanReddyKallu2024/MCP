@@ -79,6 +79,8 @@ mcp = FastMCP(
         "use list_s3_buckets() to see all buckets, browse_s3(bucket='...') to navigate "
         "folders and files interactively, get_s3_object_info(s3_uri='...') for file metadata. "
         "Use read_s3_file(s3_uri='...') to read file contents. "
+        "Use list_s3_recursive(bucket='...') when the user wants to see ALL files end-to-end, "
+        "recursively, in a single call — supports name/extension filters and gives size summary. "
         "For EMR Spark log navigation specifically, use browse_s3_logs and read_spark_driver_log."
         "\n\n"
         "ENVIRONMENT SELECTION — MANDATORY: All AWS tools (MWAA, EMR, S3) require the 'env' "
@@ -92,7 +94,10 @@ mcp = FastMCP(
         "\n\n"
         "AZURE DEVOPS: When the user asks about repos, source code, sprints, "
         "work items, PBIs, tasks, bugs, backlogs, or iterations — use Azure DevOps tools. "
-        "list_repos to see repos, browse_repo to explore, read_repo_file to read code. "
+        "list_repos to see repos, browse_repo to explore one folder at a time, "
+        "browse_repo_recursive to see the ENTIRE repo file tree in one call (use this when "
+        "the user asks 'what files are in this repo?', 'show me the structure', or 'list all files'). "
+        "read_repo_file to read a file's content. "
         "get_current_sprint for active sprint, get_sprint_work_items for sprint content, "
         "get_work_item_details for full PBI/Task/Bug details, get_backlog for backlog."
     ),
@@ -124,6 +129,7 @@ from mcp_server.tools.emr_tools import (              # noqa: E402
     read_spark_driver_log,
     browse_s3_logs,
     cancel_job_run,
+    stop_emr_application,
     read_s3_file,
     get_emr_cost_summary,
 )
@@ -131,6 +137,7 @@ from mcp_server.tools.s3_tools import (               # noqa: E402
     list_s3_buckets,
     browse_s3,
     get_s3_object_info,
+    list_s3_recursive,
 )
 from mcp_server.tools.confluence_tools import (       # noqa: E402
     search_confluence,
@@ -146,6 +153,7 @@ from mcp_server.tools.confluence_tools import (       # noqa: E402
 from mcp_server.tools.azdo_tools import (              # noqa: E402
     list_repos,
     browse_repo,
+    browse_repo_recursive,
     read_repo_file,
     get_current_sprint,
     get_sprint_work_items,
@@ -174,7 +182,7 @@ mcp.tool()(get_dag_source)
 mcp.tool()(get_dags_status_dashboard)
 mcp.tool()(dag_analytics)
 
-# ── Register EMR Serverless tools (8) ────────────────────────────────────────
+# ── Register EMR Serverless tools (9) ────────────────────────────────────────
 
 mcp.tool()(list_emr_applications)
 mcp.tool()(list_job_runs)
@@ -182,14 +190,16 @@ mcp.tool()(get_job_run_details)
 mcp.tool()(read_spark_driver_log)
 mcp.tool()(browse_s3_logs)
 mcp.tool()(cancel_job_run)
+mcp.tool()(stop_emr_application)
 mcp.tool()(read_s3_file)
 mcp.tool()(get_emr_cost_summary)
 
-# ── Register S3 tools (3) ────────────────────────────────────────────────────
+# ── Register S3 tools (4) ────────────────────────────────────────────────────
 
 mcp.tool()(list_s3_buckets)
 mcp.tool()(browse_s3)
 mcp.tool()(get_s3_object_info)
+mcp.tool()(list_s3_recursive)
 
 # ── Register Confluence tools (9) ────────────────────────────────────────────
 
@@ -203,10 +213,11 @@ mcp.tool()(get_page_comments)
 mcp.tool()(create_confluence_page)
 mcp.tool()(update_confluence_page)
 
-# ── Register Azure DevOps tools (7) ─────────────────────────────────────────
+# ── Register Azure DevOps tools (8) ─────────────────────────────────────────
 
 mcp.tool()(list_repos)
 mcp.tool()(browse_repo)
+mcp.tool()(browse_repo_recursive)
 mcp.tool()(read_repo_file)
 mcp.tool()(get_current_sprint)
 mcp.tool()(get_sprint_work_items)

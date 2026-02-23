@@ -8,7 +8,7 @@ No more jumping between 5 different UIs. Just ask what you want in plain English
 
 ## What Is This?
 
-It's an MCP (Model Context Protocol) server that gives AI assistants (like Gemini CLI) access to 40 tools across your entire ops stack. You talk to it in natural language, and it calls the right APIs for you.
+It's an MCP (Model Context Protocol) server that gives AI assistants (like Gemini CLI) access to 43 tools across your entire ops stack. You talk to it in natural language, and it calls the right APIs for you.
 
 **Example:**
 > You: "Which DAGs failed today in prod?"
@@ -113,7 +113,7 @@ AZDO_TEAM=Activate Team
 
 ---
 
-## All 40 Tools
+## All 43 Tools
 
 ### Airflow / MWAA (11 tools)
 
@@ -143,7 +143,7 @@ Everything you need to monitor, debug, and manage your DAGs.
 
 ---
 
-### EMR Serverless (8 tools)
+### EMR Serverless (9 tools)
 
 Manage Spark jobs, read driver logs, browse S3 log files, track costs.
 
@@ -155,19 +155,22 @@ Manage Spark jobs, read driver logs, browse S3 log files, track costs.
 | `read_spark_driver_log` | Reads stdout/stderr from the Spark driver — the actual Python output and errors |
 | `browse_s3_logs` | Navigates the S3 log directory structure folder by folder |
 | `cancel_job_run` | Cancels a running or stuck Spark job |
-| `read_s3_file` | Reads any file from S3 by URI (not just logs — any file) |
+| `stop_emr_application` | Stops an EMR app — auto-cancels running jobs if needed |
+| `read_s3_file` | Reads any file from S3 (CSV, TXT, JSON, Parquet) — 5 MB limit, auto-detects format |
 | `get_emr_cost_summary` | Shows vCPU hours, memory, storage usage — broken down per app |
 
 **Common things you'd say:**
 - "Show me the Spark driver log for this job"
 - "What failed in the stdout log?"
 - "Cancel that stuck job"
+- "Stop that EMR application"
+- "Force-stop the app and cancel all running jobs"
 - "How much has EMR cost us this week?"
 - "Read this S3 file: s3://bucket/path/to/file.csv"
 
 ---
 
-### S3 — General (3 tools)
+### S3 — General (4 tools)
 
 Browse any S3 bucket in the account — not just EMR logs.
 
@@ -175,11 +178,15 @@ Browse any S3 bucket in the account — not just EMR logs.
 |------|-------------|
 | `list_s3_buckets` | Lists all S3 buckets in the AWS account |
 | `browse_s3` | Interactive folder/file browsing — like a file explorer for S3 |
+| `list_s3_recursive` | Recursively lists ALL files end-to-end with filters and size summary |
 | `get_s3_object_info` | Shows file metadata (size, modified date, content type, encryption) without downloading |
 
 **Common things you'd say:**
 - "What S3 buckets do we have in dev?"
 - "Show me what's in the raw data bucket"
+- "List all CSV files in the raw bucket"
+- "How much data is in this S3 folder?"
+- "Read this parquet file from S3"
 - "How big is this file?"
 
 ---
@@ -210,14 +217,15 @@ Search, read, and write documentation — without opening a browser.
 
 ---
 
-### Azure DevOps / TFS (7 tools)
+### Azure DevOps / TFS (8 tools)
 
 Sprint tracking, work items, source code — all from chat.
 
 | Tool | What It Does |
 |------|-------------|
 | `list_repos` | Lists all Git repositories in the project |
-| `browse_repo` | Browse files and folders in a repo — like a directory listing |
+| `browse_repo` | Browse files and folders in a repo — one folder at a time |
+| `browse_repo_recursive` | Full recursive file tree of a repo in one call — shows every file with correct paths |
 | `read_repo_file` | Read the content of any file (with syntax highlighting) |
 | `get_current_sprint` | Shows active sprint name, dates, and days remaining |
 | `get_sprint_work_items` | All PBIs, Tasks, and Bugs in the sprint — who's doing what |
@@ -229,7 +237,9 @@ Sprint tracking, work items, source code — all from chat.
 - "What's everyone working on?"
 - "Show me PBI 12345"
 - "What's in the backlog?"
-- "Show me the source code for the hem_processing repo"
+- "Show me all the files in the hem_processing repo"
+- "List all Python files in this repo"
+- "What's the folder structure of this repo?"
 
 ---
 
@@ -281,10 +291,10 @@ D:\MCP\
 │   └── tools/
 │       ├── _aws_helpers.py   # Shared AWS helpers (S3 client, formatting)
 │       ├── mwaa_tools.py     # 11 Airflow tools
-│       ├── emr_tools.py      # 8 EMR Serverless tools
-│       ├── s3_tools.py       # 3 general S3 tools
+│       ├── emr_tools.py      # 9 EMR Serverless tools
+│       ├── s3_tools.py       # 4 general S3 tools
 │       ├── confluence_tools.py # 9 Confluence tools
-│       ├── azdo_tools.py     # 7 Azure DevOps tools
+│       ├── azdo_tools.py     # 8 Azure DevOps tools
 │       ├── orchestration_tools.py # 1 orchestration tool
 │       └── utility_tools.py  # 1 utility tool
 ├── .env                      # Your local config (not committed)

@@ -612,22 +612,144 @@ def cancel_job_run(application_id: str, job_run_id: str, env: str | None = None)
     )
 
 
+def stop_emr_application(
+    application_id: str,
+    force: bool = False,
+    env: str | None = None,
+) -> str:
+    """
+    Stop an EMR Serverless application. If jobs are running, cancels them first.
+
+    Smart flow:
+      1. Tries to stop the application directly.
+      2. If it fails because jobs are still running — automatically finds and
+         cancels ALL running/pending jobs, then retries the stop.
+      3. Reports every step taken so the user knows exactly what happened.
+
+    Use force=True to skip the initial stop attempt and go straight to
+    cancelling all jobs first (useful when you know jobs are running).
+
+    Args:
+        application_id: The EMR Serverless application ID.
+        force: If True, cancel all running jobs first without trying to stop.
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
+
+    Returns a step-by-step report of what was done.
+    """
+    err = validate_env(env)
+    if err:
+        return err
+
+    client = _get_emr(env)
+    report: list[str] = []
+
+    def _cancel_all_jobs() -> int:
+        """Find and cancel all active jobs. Returns count of jobs cancelled."""
+        cancelled = 0
+        active_states = ["SUBMITTED", "PENDING", "SCHEDULED", "RUNNING"]
+        try:
+            for state in active_states:
+                resp = client.list_job_runs(
+                    applicationId=application_id,
+                    maxResults=50,
+                    states=[state],
+                )
+                for run in resp.get("jobRuns", []):
+                    job_id = run.get("id", "")
+                    job_state = run.get("state", "")
+                    try:
+                        client.cancel_job_run(applicationId=application_id, jobRunId=job_id)
+                        report.append(f"   ⛔ Cancelled job `{job_id}` (was {job_state})")
+                        cancelled += 1
+                    except Exception as exc:
+                        report.append(f"   ⚠️ Could not cancel job `{job_id}`: {exc}")
+        except Exception as exc:
+            report.append(f"   ⚠️ Error listing jobs: {exc}")
+        return cancelled
+
+    # ── Force mode: cancel all jobs first ──
+    if force:
+        report.append(f"🔧 **Force-stopping** application `{application_id}`...")
+        report.append("")
+        report.append("**Step 1: Cancelling all active jobs...**")
+        count = _cancel_all_jobs()
+        if count == 0:
+            report.append("   ✅ No active jobs found.")
+        else:
+            report.append(f"   ✅ Cancelled {count} job(s).")
+        report.append("")
+        report.append("**Step 2: Stopping application...**")
+        try:
+            client.stop_application(applicationId=application_id)
+            report.append(f"   ✅ Stop requested for `{application_id}`.")
+            report.append("   The application will transition to STOPPING → STOPPED.")
+        except Exception as exc:
+            report.append(f"   ❌ Stop failed: {exc}")
+        return "\n".join(report)
+
+    # ── Normal mode: try stop first ──
+    report.append(f"🔧 **Stopping** application `{application_id}`...")
+    report.append("")
+    report.append("**Step 1: Attempting to stop application...**")
+
+    try:
+        client.stop_application(applicationId=application_id)
+        report.append(f"   ✅ Stop requested for `{application_id}`.")
+        report.append("   The application will transition to STOPPING → STOPPED.")
+        return "\n".join(report)
+    except Exception as exc:
+        error_str = str(exc)
+        # Check if failure is because jobs are running
+        if "ValidationException" in error_str or "running" in error_str.lower() or "active" in error_str.lower():
+            report.append(f"   ⚠️ Cannot stop — active jobs are running.")
+            report.append("")
+            report.append("**Step 2: Cancelling all active jobs...**")
+            count = _cancel_all_jobs()
+            if count == 0:
+                report.append("   No active jobs found (may have just finished).")
+            else:
+                report.append(f"   ✅ Cancelled {count} job(s).")
+            report.append("")
+            report.append("**Step 3: Retrying stop application...**")
+            try:
+                client.stop_application(applicationId=application_id)
+                report.append(f"   ✅ Stop requested for `{application_id}`.")
+                report.append("   The application will transition to STOPPING → STOPPED.")
+            except Exception as exc2:
+                report.append(f"   ❌ Retry failed: {exc2}")
+                report.append("   💡 Jobs may still be cancelling. Wait a minute and try again.")
+        else:
+            report.append(f"   ❌ Stop failed: {exc}")
+
+    return "\n".join(report)
+
+
+_MAX_READ_BYTES = 5 * 1024 * 1024  # 5 MB hard limit for read_s3_file
+
+
 def read_s3_file(
     s3_uri: str,
     tail_lines: int = 100,
     search_text: str | None = None,
+    head_rows: int = 50,
     env: str | None = None,
 ) -> str:
     """
-    Read any file from S3 by its full URI.
+    Read any file from S3 by its full URI and display in chat.
 
-    Use this for reading input data files, output files, configuration files,
-    or any S3 object — not just Spark logs. Auto-decompresses .gz files.
+    Supports CSV, TXT, JSON, log files, .gz compressed files, and Parquet.
+    Files larger than 5 MB are rejected to avoid crashing the server.
+
+    For Parquet files: reads the file and displays the first N rows as a
+    formatted table (default 50 rows). Parquet files are binary so they
+    cannot be tailed or searched — use head_rows to control output.
 
     Args:
         s3_uri: Full S3 URI (e.g. 's3://bucket-name/path/to/file.csv').
-        tail_lines: Number of lines from the end to return (default 100). Set to -1 for all.
-        search_text: Optional text to filter matching lines.
+        tail_lines: Lines from the end for text files (default 100). -1 for all.
+        search_text: Filter matching lines (text files only).
+        head_rows: Rows to display for Parquet files (default 50).
         env: Target environment — 'dev', 'uat', 'test', or 'prod'.
              IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
 
@@ -638,12 +760,44 @@ def read_s3_file(
         return err
 
     if not s3_uri.startswith("s3://"):
-        return "❌ Invalid S3 URI: '{s3_uri}'. Must start with 's3://' (e.g. 's3://bucket-name/path/to/file.csv')."
+        return f"❌ Invalid S3 URI: '{s3_uri}'. Must start with 's3://' (e.g. 's3://bucket-name/path/to/file.csv')."
 
     bucket, key = _parse_s3_uri(s3_uri)
     if not key:
         return f"❌ No key/path specified in URI: '{s3_uri}'."
 
+    # ── Size guard — check before downloading ──
+    s3 = _get_s3(env)
+    try:
+        head = s3.head_object(Bucket=bucket, Key=key)
+        file_size = head.get("ContentLength", 0)
+    except Exception as exc:
+        if _error_code(exc) in CREDENTIAL_ERROR_CODES:
+            _clear_s3(env)
+            try:
+                s3 = _get_s3(env)
+                head = s3.head_object(Bucket=bucket, Key=key)
+                file_size = head.get("ContentLength", 0)
+            except Exception as exc2:
+                return f"❌ Could not read `{s3_uri}`: {exc2}"
+        else:
+            return f"❌ Could not read `{s3_uri}`. Check that the file exists and you have access."
+
+    if file_size > _MAX_READ_BYTES:
+        return (
+            f"❌ File too large to display in chat.\n"
+            f"   Size: {_fmt_size(file_size)} | Limit: {_fmt_size(_MAX_READ_BYTES)}\n"
+            f"   Source: {s3_uri}\n\n"
+            f"💡 Use `get_s3_object_info(s3_uri='{s3_uri}')` to see file metadata.\n"
+            f"💡 Download from the S3 console or use `aws s3 cp` to read locally."
+        )
+
+    # ── Parquet files — binary format, needs special handling ──
+    is_parquet = key.lower().endswith(".parquet") or key.lower().endswith(".parquet.gz")
+    if is_parquet:
+        return _read_parquet_from_s3(bucket, key, s3_uri, head_rows, env)
+
+    # ── Text files (CSV, JSON, TXT, log, gz) ──
     content = _read_s3_object(bucket, key, env=env)
     if content is None:
         return f"❌ Could not read `{s3_uri}`. Check that the file exists and you have access."
@@ -651,7 +805,6 @@ def read_s3_file(
     lines_all = content.splitlines()
     total = len(lines_all)
 
-    # Filter by search text
     if search_text:
         search_lower = search_text.lower()
         lines_all = [l for l in lines_all if search_lower in l.lower()]
@@ -665,6 +818,61 @@ def read_s3_file(
 
     header += f"   Source: {s3_uri}\n"
     return header + "\n".join(lines_all)
+
+
+def _read_parquet_from_s3(
+    bucket: str, key: str, s3_uri: str, head_rows: int, env: str | None,
+) -> str:
+    """Read a Parquet file from S3 and return first N rows as a formatted table."""
+    import io
+
+    try:
+        import pyarrow.parquet as pq
+    except ImportError:
+        return (
+            "❌ Parquet support requires `pyarrow`. Install it:\n"
+            "   `pip install pyarrow`"
+        )
+
+    s3 = _get_s3(env)
+    try:
+        obj = s3.get_object(Bucket=bucket, Key=key)
+        raw = obj["Body"].read()
+    except Exception as exc:
+        return f"❌ Could not read `{s3_uri}`: {exc}"
+
+    try:
+        table = pq.read_table(io.BytesIO(raw))
+    except Exception as exc:
+        return f"❌ Could not parse Parquet file: {exc}"
+
+    total_rows = table.num_rows
+    total_cols = table.num_columns
+    schema_lines = [f"  {f.name}: {f.type}" for f in table.schema]
+
+    # Convert to pandas for display
+    df = table.to_pandas()
+    display_rows = min(head_rows, total_rows)
+    preview = df.head(display_rows).to_string(max_colwidth=60)
+
+    lines = [
+        f"📄 **Parquet File** — {total_rows:,} rows, {total_cols} columns",
+        f"   Source: {s3_uri}",
+        f"   Size: {_fmt_size(len(raw))}",
+        "",
+        "**Schema:**",
+        *schema_lines,
+        "",
+        f"**Data** (first {display_rows} of {total_rows:,} rows):",
+        "```",
+        preview,
+        "```",
+    ]
+
+    if total_rows > display_rows:
+        lines.append(f"\n   ⚠️ Showing {display_rows} of {total_rows:,} rows. Use `head_rows=` to see more.")
+
+    return "\n".join(lines)
 
 
 def get_emr_cost_summary(

@@ -202,6 +202,165 @@ def browse_s3(
     return "\n".join(lines)
 
 
+def list_s3_recursive(
+    bucket: str,
+    prefix: str = "",
+    name_filter: str | None = None,
+    extension_filter: str | None = None,
+    max_results: int = 500,
+    env: str | None = None,
+) -> str:
+    """
+    Recursively list ALL files under an S3 bucket/prefix in a single call.
+
+    USE THIS TOOL when the user asks to see everything in a bucket or folder
+    end-to-end, wants a full file listing, or needs to find files by name
+    or extension across nested folders.
+
+    Args:
+        bucket: S3 bucket name (required).
+        prefix: Starting prefix/folder (default: root of bucket).
+                Example: 'raw/hem_processing/' to list that subtree.
+        name_filter: Optional — case-insensitive substring match on filename.
+                     Example: 'taxonomy' shows only files with 'taxonomy' in the name.
+        extension_filter: Optional — file extension to filter by (with or without dot).
+                          Example: '.csv' or 'csv' or '.parquet' or '.gz'
+        max_results: Max files to return (default 500, max 2000).
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
+
+    Returns a full recursive file listing with sizes, plus a summary with
+    total count, total size, and file type breakdown.
+    """
+    err = validate_env(env)
+    if err:
+        return err
+
+    max_results = max(1, min(max_results, 2000))
+
+    # Normalise extension filter
+    ext = None
+    if extension_filter:
+        ext = extension_filter.strip().lower()
+        if not ext.startswith("."):
+            ext = "." + ext
+
+    name_lower = name_filter.strip().lower() if name_filter else None
+
+    s3 = _get_s3(env)
+
+    # Normalise prefix
+    scan_prefix = prefix.strip()
+    if scan_prefix and not scan_prefix.endswith("/"):
+        scan_prefix += "/"
+
+    files: list[dict] = []
+    total_size = 0
+    total_count = 0
+    ext_counts: dict[str, int] = {}
+    ext_sizes: dict[str, int] = {}
+    continuation_token = None
+    truncated = False
+
+    try:
+        while True:
+            kwargs: dict = {
+                "Bucket": bucket,
+                "Prefix": scan_prefix,
+                "MaxKeys": 1000,
+            }
+            if continuation_token:
+                kwargs["ContinuationToken"] = continuation_token
+
+            resp = s3.list_objects_v2(**kwargs)
+
+            for obj in resp.get("Contents", []):
+                key = obj["Key"]
+                if key.endswith("/"):  # Skip folder markers
+                    continue
+
+                filename = key.rsplit("/", 1)[-1]
+                file_ext = ("." + filename.rsplit(".", 1)[-1]).lower() if "." in filename else ""
+
+                # Apply filters
+                if ext and file_ext != ext:
+                    continue
+                if name_lower and name_lower not in filename.lower():
+                    continue
+
+                size = obj.get("Size", 0)
+                total_count += 1
+                total_size += size
+                ext_counts[file_ext or "(no ext)"] = ext_counts.get(file_ext or "(no ext)", 0) + 1
+                ext_sizes[file_ext or "(no ext)"] = ext_sizes.get(file_ext or "(no ext)", 0) + size
+
+                if len(files) < max_results:
+                    files.append({
+                        "key": key,
+                        "size": size,
+                        "modified": _fmt_time(obj.get("LastModified")),
+                    })
+
+            if not resp.get("IsTruncated"):
+                break
+            continuation_token = resp.get("NextContinuationToken")
+            # Safety: if we've already got enough counted files, stop paginating
+            if total_count > max_results * 5:
+                truncated = True
+                break
+
+    except Exception as exc:
+        return f"❌ Failed to list `s3://{bucket}/{scan_prefix}`: {exc}"
+
+    if total_count == 0:
+        filter_msg = ""
+        if ext:
+            filter_msg += f" matching `*{ext}`"
+        if name_lower:
+            filter_msg += f" containing '{name_filter}'"
+        return f"📂 No files found in `s3://{bucket}/{scan_prefix}`{filter_msg}."
+
+    # ── Build output ──
+    lines = [f"📂 **s3://{bucket}/{scan_prefix or ''}** — {total_count:,} file(s), {_fmt_size(total_size)} total\n"]
+
+    if ext or name_lower:
+        filters = []
+        if ext:
+            filters.append(f"extension=`{ext}`")
+        if name_lower:
+            filters.append(f"name contains '{name_filter}'")
+        lines.append(f"   🔍 Filters: {', '.join(filters)}\n")
+
+    # File listing
+    for f in files:
+        rel_path = f["key"][len(scan_prefix):] if scan_prefix else f["key"]
+        lines.append(f"  📄 {rel_path}")
+        lines.append(f"     {_fmt_size(f['size'])}  |  {f['modified']}")
+
+    if total_count > len(files):
+        lines.append(f"\n   ⚠️ Showing {len(files):,} of {total_count:,} files (use filters to narrow down).")
+
+    if truncated:
+        lines.append(f"   ⚠️ Scan stopped early — more files exist. Use a more specific prefix or filter.")
+
+    # ── Summary footer ──
+    lines.append("")
+    lines.append("**Summary:**")
+    lines.append(f"   Total files : {total_count:,}")
+    lines.append(f"   Total size  : {_fmt_size(total_size)}")
+    if len(ext_counts) > 1 or (len(ext_counts) == 1 and not ext):
+        lines.append("   **By type:**")
+        for e in sorted(ext_counts, key=lambda x: -ext_sizes.get(x, 0)):
+            lines.append(f"     {e:12s}  {ext_counts[e]:>5,} file(s)  {_fmt_size(ext_sizes[e])}")
+
+    lines.append("")
+    first_key = files[0]["key"] if files else f"{scan_prefix}example.csv"
+    lines.append(f"💡 `read_s3_file(s3_uri='s3://{bucket}/{first_key}')` to read a file.")
+    lines.append(f"💡 `get_s3_object_info(s3_uri='s3://{bucket}/{first_key}')` for file details.")
+
+    return "\n".join(lines)
+
+
 def get_s3_object_info(s3_uri: str, env: str | None = None) -> str:
     """
     Get detailed metadata for a single S3 object without downloading it.

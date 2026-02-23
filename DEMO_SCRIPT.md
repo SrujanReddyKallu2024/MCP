@@ -174,7 +174,7 @@ Say something like:
 
 ## Wrap Up (~1 min)
 
-> "So that's it — 40 tools across 5 different platforms, all accessible through natural language. The key things to remember:
+> "So that's it — 43 tools across 6 different platforms, all accessible through natural language. The key things to remember:
 >
 > 1. **It always asks which environment** — dev, uat, test, or prod. No accidental production changes.
 > 2. **One-shot diagnosis** saves 20 minutes every morning when something fails.
