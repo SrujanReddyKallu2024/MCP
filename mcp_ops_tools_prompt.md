@@ -2,7 +2,7 @@
 
 ## What This MCP Server Does
 
-You have access to an **ops-tools** MCP server with **43 tools** across six domains:
+You have access to an **ops-tools** MCP server with **44 tools** across six domains:
 - **AWS MWAA (Airflow)** — DAG listing, runs, task logs, triggering, pause/unpause, retry, status dashboard, run history & trends
 - **AWS EMR Serverless** — Spark applications, job runs, driver logs from S3, cost summary
 - **S3 (General)** — List buckets, browse any bucket/folder interactively, file metadata inspection
@@ -34,7 +34,7 @@ The environment is the **ConsumerSync** team at Experian, running marketplace da
 | `get_dags_status_dashboard` | Full dashboard of ALL DAGs with last run status | `env`, `limit` |
 | `dag_analytics` | Run statistics with trends, success rate, duration stats, failure patterns | `dag_id`, `env`, `days` |
 
-### EMR Serverless Tools (9 tools)
+### EMR Serverless Tools (10 tools)
 
 | Tool | Purpose | Key Args |
 |------|---------|----------|
@@ -45,6 +45,7 @@ The environment is the **ConsumerSync** team at Experian, running marketplace da
 | `browse_s3_logs` | Navigate S3 log directory structure | `env`, `prefix`, `bucket` |
 | `cancel_job_run` | Cancel a running or pending job | `env`, `application_id`, `job_run_id` |
 | `stop_emr_application` | Stop an EMR app — auto-cancels running jobs if needed | `env`, `application_id`, `force` |
+| `delete_emr_application` | Permanently delete an EMR app — force mode stops + deletes in one call | `env`, `application_id`, `force` |
 | `read_s3_file` | Read any S3 file (CSV, TXT, JSON, Parquet — 5 MB limit) | `env`, `s3_uri`, `tail_lines`, `search_text`, `head_rows` |
 | `get_emr_cost_summary` | Resource usage and cost summary across jobs | `env`, `application_id`, `days` |
 
@@ -169,12 +170,18 @@ stop_emr_application(application_id='00gXXX', env='dev')
 
 stop_emr_application(application_id='00gXXX', env='dev', force=True)
 → Force-stop: auto-cancels ALL running/pending jobs first, then stops the app
+
+delete_emr_application(application_id='00gXXX', env='dev')
+→ Deletes a STOPPED or CREATED app permanently
+
+delete_emr_application(application_id='00gXXX', env='dev', force=True)
+→ Full lifecycle: cancels jobs → stops app → waits → deletes (one call)
 ```
 
-**When to use:** The `finalise` task in each DAG normally stops and deletes the EMR app. Use `stop_emr_application` when:
-- A DAG failed before reaching `finalise` and the app is still running (costing money)
-- You need to manually shut down an app that's stuck
-- Use `force=True` when jobs are still running — it cancels them all first
+**When to use which:**
+- `stop_emr_application` — when a DAG failed before `finalise` and the app is still running (costing money). Use `force=True` when jobs are still running.
+- `delete_emr_application` — when you want to permanently remove an app. Use `force=True` to stop-and-delete in one call. Without force, only works on already-stopped apps.
+- The `finalise` task in each DAG normally stops and deletes the EMR app automatically. These tools are for when that doesn't happen.
 
 ---
 

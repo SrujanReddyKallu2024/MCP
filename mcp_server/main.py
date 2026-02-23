@@ -130,6 +130,7 @@ from mcp_server.tools.emr_tools import (              # noqa: E402
     browse_s3_logs,
     cancel_job_run,
     stop_emr_application,
+    delete_emr_application,
     read_s3_file,
     get_emr_cost_summary,
 )
@@ -182,7 +183,7 @@ mcp.tool()(get_dag_source)
 mcp.tool()(get_dags_status_dashboard)
 mcp.tool()(dag_analytics)
 
-# ── Register EMR Serverless tools (9) ────────────────────────────────────────
+# ── Register EMR Serverless tools (10) ───────────────────────────────────────
 
 mcp.tool()(list_emr_applications)
 mcp.tool()(list_job_runs)
@@ -191,6 +192,7 @@ mcp.tool()(read_spark_driver_log)
 mcp.tool()(browse_s3_logs)
 mcp.tool()(cancel_job_run)
 mcp.tool()(stop_emr_application)
+mcp.tool()(delete_emr_application)
 mcp.tool()(read_s3_file)
 mcp.tool()(get_emr_cost_summary)
 

@@ -725,6 +725,143 @@ def stop_emr_application(
     return "\n".join(report)
 
 
+def delete_emr_application(
+    application_id: str,
+    force: bool = False,
+    env: str | None = None,
+) -> str:
+    """
+    Delete an EMR Serverless application permanently.
+
+    The application must be in STOPPED or CREATED state to be deleted.
+    If the application is still running:
+      - With force=False: returns an error asking you to stop it first.
+      - With force=True: automatically stops the app (cancelling any running
+        jobs), waits for it to reach STOPPED state, then deletes it.
+
+    Args:
+        application_id: The EMR Serverless application ID.
+        force: If True, stop the app first (cancelling jobs) then delete.
+                If False, only delete if already stopped.
+        env: Target environment — 'dev', 'uat', 'test', or 'prod'.
+             IMPORTANT: Do NOT guess or default. Ask the user which environment if not specified.
+
+    Returns a step-by-step report of what was done.
+    """
+    import time
+
+    err = validate_env(env)
+    if err:
+        return err
+
+    client = _get_emr(env)
+    report: list[str] = []
+
+    # ── Check current state ──
+    try:
+        app_resp = client.get_application(applicationId=application_id)
+        app = app_resp.get("application", {})
+        state = app.get("state", "UNKNOWN")
+        name = app.get("name", "—")
+    except Exception as exc:
+        return f"❌ Could not find application `{application_id}`: {exc}"
+
+    report.append(f"🗑️ **Deleting** application `{application_id}` ({name})")
+    report.append(f"   Current state: {state}")
+    report.append("")
+
+    # ── Already deletable? ──
+    if state in ("STOPPED", "CREATED"):
+        report.append("**Deleting application...**")
+        try:
+            client.delete_application(applicationId=application_id)
+            report.append(f"   ✅ Application `{application_id}` has been deleted.")
+        except Exception as exc:
+            report.append(f"   ❌ Delete failed: {exc}")
+        return "\n".join(report)
+
+    # ── App is running/started — needs stopping first ──
+    if not force:
+        report.append(f"⚠️ Application is in `{state}` state — cannot delete directly.")
+        report.append("")
+        report.append("**Options:**")
+        report.append(f"   1. Stop it first: `stop_emr_application(application_id='{application_id}', force=True)`")
+        report.append(f"      then: `delete_emr_application(application_id='{application_id}')`")
+        report.append(f"   2. Force-delete (does both): `delete_emr_application(application_id='{application_id}', force=True)`")
+        return "\n".join(report)
+
+    # ── Force mode: stop then delete ──
+    report.append("**Step 1: Stopping application (force=True)...**")
+
+    # Cancel any running jobs first
+    active_states = ["SUBMITTED", "PENDING", "SCHEDULED", "RUNNING"]
+    cancelled = 0
+    try:
+        for job_state in active_states:
+            resp = client.list_job_runs(
+                applicationId=application_id,
+                maxResults=50,
+                states=[job_state],
+            )
+            for run in resp.get("jobRuns", []):
+                job_id = run.get("id", "")
+                try:
+                    client.cancel_job_run(applicationId=application_id, jobRunId=job_id)
+                    report.append(f"   ⛔ Cancelled job `{job_id}` (was {run.get('state', '?')})")
+                    cancelled += 1
+                except Exception:
+                    pass
+    except Exception:
+        pass
+
+    if cancelled > 0:
+        report.append(f"   Cancelled {cancelled} job(s).")
+
+    # Stop the application
+    try:
+        client.stop_application(applicationId=application_id)
+        report.append(f"   ✅ Stop requested for `{application_id}`.")
+    except Exception as exc:
+        error_str = str(exc)
+        if "already" in error_str.lower() or "stopped" in error_str.lower():
+            report.append("   ℹ️ Application is already stopping/stopped.")
+        else:
+            report.append(f"   ❌ Stop failed: {exc}")
+            return "\n".join(report)
+
+    # Wait for STOPPED state (up to 60 seconds)
+    report.append("")
+    report.append("**Step 2: Waiting for STOPPED state...**")
+    for attempt in range(12):
+        time.sleep(5)
+        try:
+            app_resp = client.get_application(applicationId=application_id)
+            current = app_resp.get("application", {}).get("state", "?")
+            if current == "STOPPED":
+                report.append(f"   ✅ Application reached STOPPED state.")
+                break
+            if current == "TERMINATED":
+                report.append(f"   ℹ️ Application already terminated.")
+                return "\n".join(report)
+        except Exception:
+            pass
+    else:
+        report.append("   ⚠️ Timed out waiting (60s). Application may still be stopping.")
+        report.append(f"   💡 Try again: `delete_emr_application(application_id='{application_id}')`")
+        return "\n".join(report)
+
+    # Delete the application
+    report.append("")
+    report.append("**Step 3: Deleting application...**")
+    try:
+        client.delete_application(applicationId=application_id)
+        report.append(f"   ✅ Application `{application_id}` has been deleted.")
+    except Exception as exc:
+        report.append(f"   ❌ Delete failed: {exc}")
+
+    return "\n".join(report)
+
+
 _MAX_READ_BYTES = 5 * 1024 * 1024  # 5 MB hard limit for read_s3_file
 
 

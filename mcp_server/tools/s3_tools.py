@@ -2,7 +2,8 @@
 General-purpose S3 tools.
 
 Provides account-wide Amazon S3 access: list buckets, browse any
-bucket/prefix interactively, and inspect object metadata.
+bucket/prefix interactively, inspect object metadata, and recursively
+list files with filters.
 
 These are GENERAL S3 tools for any bucket.  For EMR-specific Spark log
 navigation use browse_s3_logs and read_s3_file from emr_tools instead.
@@ -10,6 +11,7 @@ navigation use browse_s3_logs and read_s3_file from emr_tools instead.
 Tools:
   * list_s3_buckets    -- list all S3 buckets in the AWS account
   * browse_s3          -- interactively browse folders and files in any bucket
+  * list_s3_recursive  -- recursively list ALL files with name/extension filters
   * get_s3_object_info -- get full metadata for a single object (head_object)
 """
 

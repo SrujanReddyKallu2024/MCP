@@ -8,7 +8,7 @@ No more jumping between 5 different UIs. Just ask what you want in plain English
 
 ## What Is This?
 
-It's an MCP (Model Context Protocol) server that gives AI assistants (like Gemini CLI) access to 43 tools across your entire ops stack. You talk to it in natural language, and it calls the right APIs for you.
+It's an MCP (Model Context Protocol) server that gives AI assistants (like Gemini CLI) access to 44 tools across your entire ops stack. You talk to it in natural language, and it calls the right APIs for you.
 
 **Example:**
 > You: "Which DAGs failed today in prod?"
@@ -113,7 +113,7 @@ AZDO_TEAM=Activate Team
 
 ---
 
-## All 43 Tools
+## All 44 Tools
 
 ### Airflow / MWAA (11 tools)
 
@@ -143,7 +143,7 @@ Everything you need to monitor, debug, and manage your DAGs.
 
 ---
 
-### EMR Serverless (9 tools)
+### EMR Serverless (10 tools)
 
 Manage Spark jobs, read driver logs, browse S3 log files, track costs.
 
@@ -156,6 +156,7 @@ Manage Spark jobs, read driver logs, browse S3 log files, track costs.
 | `browse_s3_logs` | Navigates the S3 log directory structure folder by folder |
 | `cancel_job_run` | Cancels a running or stuck Spark job |
 | `stop_emr_application` | Stops an EMR app — auto-cancels running jobs if needed |
+| `delete_emr_application` | Permanently deletes an EMR app — force mode stops and deletes in one call |
 | `read_s3_file` | Reads any file from S3 (CSV, TXT, JSON, Parquet) — 5 MB limit, auto-detects format |
 | `get_emr_cost_summary` | Shows vCPU hours, memory, storage usage — broken down per app |
 
@@ -165,6 +166,7 @@ Manage Spark jobs, read driver logs, browse S3 log files, track costs.
 - "Cancel that stuck job"
 - "Stop that EMR application"
 - "Force-stop the app and cancel all running jobs"
+- "Delete that EMR application"
 - "How much has EMR cost us this week?"
 - "Read this S3 file: s3://bucket/path/to/file.csv"
 
@@ -291,7 +293,7 @@ D:\MCP\
 │   └── tools/
 │       ├── _aws_helpers.py   # Shared AWS helpers (S3 client, formatting)
 │       ├── mwaa_tools.py     # 11 Airflow tools
-│       ├── emr_tools.py      # 9 EMR Serverless tools
+│       ├── emr_tools.py      # 10 EMR Serverless tools
 │       ├── s3_tools.py       # 4 general S3 tools
 │       ├── confluence_tools.py # 9 Confluence tools
 │       ├── azdo_tools.py     # 8 Azure DevOps tools
