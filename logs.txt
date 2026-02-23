@@ -1,19 +1,17 @@
-
-
 ip-10-231-18-18.eu-west-2.compute.internal
-*** Reading remote log from Cloudwatch log_group: airflow-eec-aws-uk-ms-dev-consumersyncenv-mwaa-Task log_stream: dag_id=digital_taxonomy_processing/run_id=manual__2026-02-21T16_10_20.406764+00_00/task_id=collect_a16_stats/attempt=1.log.
-[2026-02-21, 21:41:52 IST] {local_task_job_runner.py:123} ▶ Pre task execution logs
-[2026-02-21, 21:41:53 IST] {digital_taxonomy_dag.py:53} INFO - Resolving S3 pattern: bucket=eec-aws-uk-ms-consumersync-dev-source-bucket, pattern=internal/data_office/A16_*_cbaf_utility.csv
-[2026-02-21, 21:41:53 IST] {digital_taxonomy_dag.py:82} INFO - Found 1 file(s), selected latest: s3://eec-aws-uk-ms-consumersync-dev-source-bucket/internal/data_office/A16_20250728_cbaf_utility.csv
-[2026-02-21, 21:41:53 IST] {digital_taxonomy_dag.py:766} INFO - Collecting stats for A16 input file: s3://eec-aws-uk-ms-consumersync-dev-source-bucket/internal/data_office/A16_20250728_cbaf_utility.csv (resolved from s3://eec-aws-uk-ms-consumersync-dev-source-bucket/internal/data_office/A16_*_cbaf_utility.csv)
-[2026-02-21, 21:41:53 IST] {digital_taxonomy_dag.py:769} INFO - Stats will be written to: s3://eec-aws-uk-ms-consumersync-dev-stats-bucket/get_stats
-[2026-02-21, 21:41:53 IST] {baseoperator.py:416} WARNING - EmrServerlessStartJobOperator.execute cannot be called outside TaskInstance!
-[2026-02-21, 21:41:53 IST] {base.py:84} INFO - Retrieving connection 'aws_default'
+*** Reading remote log from Cloudwatch log_group: airflow-eec-aws-uk-ms-dev-consumersyncenv-mwaa-Task log_stream: dag_id=digital_taxonomy_processing/run_id=manual__2026-02-21T16_10_20.406764+00_00/task_id=collect_f15_stats/attempt=1.log.
+[2026-02-21, 21:41:53 IST] {local_task_job_runner.py:123} ▶ Pre task execution logs
+[2026-02-21, 21:41:54 IST] {digital_taxonomy_dag.py:53} INFO - Resolving S3 pattern: bucket=eec-aws-uk-ms-consumersync-dev-source-bucket, pattern=internal/data_office/F15_*_ChannelView_ProspectView.csv
+[2026-02-21, 21:41:54 IST] {digital_taxonomy_dag.py:82} INFO - Found 1 file(s), selected latest: s3://eec-aws-uk-ms-consumersync-dev-source-bucket/internal/data_office/F15_20250723_ChannelView_ProspectView.csv
+[2026-02-21, 21:41:54 IST] {digital_taxonomy_dag.py:766} INFO - Collecting stats for F15 input file: s3://eec-aws-uk-ms-consumersync-dev-source-bucket/internal/data_office/F15_20250723_ChannelView_ProspectView.csv (resolved from s3://eec-aws-uk-ms-consumersync-dev-source-bucket/internal/data_office/F15_*_ChannelView_ProspectView.csv)
+[2026-02-21, 21:41:54 IST] {digital_taxonomy_dag.py:769} INFO - Stats will be written to: s3://eec-aws-uk-ms-consumersync-dev-stats-bucket/get_stats
+[2026-02-21, 21:41:54 IST] {baseoperator.py:416} WARNING - EmrServerlessStartJobOperator.execute cannot be called outside TaskInstance!
+[2026-02-21, 21:41:54 IST] {base.py:84} INFO - Retrieving connection 'aws_default'
 [2026-02-21, 21:41:54 IST] {emr.py:1201} INFO - Starting job on Application: 00g3k4qmas8ai90t
-[2026-02-21, 21:41:54 IST] {emr.py:1221} INFO - EMR serverless job started: 00g3k4rfqltamg0v
-[2026-02-21, 21:41:54 IST] {emr.py:1364} INFO - S3 logs available at: https://console.aws.amazon.com/s3/buckets/eec-aws-uk-ms-consumersync-dev-logs-bucket?region=eu-west-2&prefix=spark-logs/digital_taxonomy_a16_stats/applications/00g3k4qmas8ai90t/jobs/00g3k4rfqltamg0v/
-[2026-02-21, 21:41:54 IST] {waiter_with_logging.py:88} INFO - Serverless Job status is: PENDING - The JobRun is pending scheduling.
-[2026-02-21, 21:42:54 IST] {waiter_with_logging.py:88} INFO - Serverless Job status is: RUNNING
-[2026-02-21, 21:43:54 IST] {digital_taxonomy_dag.py:794} INFO - A16 stats collection finished, time taken: 0:02:01.364361
-[2026-02-21, 21:43:54 IST] {python.py:240} INFO - Done. Returned value was: Executed A16 stats collection: 00g3k4rfqltamg0v
-[2026-02-21, 21:43:54 IST] {taskinstance.py:340} ▶ Post task execution logs
+[2026-02-21, 21:41:55 IST] {emr.py:1221} INFO - EMR serverless job started: 00g3k4rfvurveg0v
+[2026-02-21, 21:41:55 IST] {emr.py:1364} INFO - S3 logs available at: https://console.aws.amazon.com/s3/buckets/eec-aws-uk-ms-consumersync-dev-logs-bucket?region=eu-west-2&prefix=spark-logs/digital_taxonomy_f15_stats/applications/00g3k4qmas8ai90t/jobs/00g3k4rfvurveg0v/
+[2026-02-21, 21:41:55 IST] {waiter_with_logging.py:88} INFO - Serverless Job status is: PENDING - The JobRun is pending scheduling.
+[2026-02-21, 21:42:55 IST] {waiter_with_logging.py:88} INFO - Serverless Job status is: RUNNING
+[2026-02-21, 21:43:55 IST] {digital_taxonomy_dag.py:794} INFO - F15 stats collection finished, time taken: 0:02:01.484240
+[2026-02-21, 21:43:55 IST] {python.py:240} INFO - Done. Returned value was: Executed F15 stats collection: 00g3k4rfvurveg0v
+[2026-02-21, 21:43:55 IST] {taskinstance.py:340} ▶ Post task execution logs
